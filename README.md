@@ -6,6 +6,8 @@ Need to install packages: biopython interval3 collections multiprocessing
 pip install biopython interval3 collections multiprocessing
 ```
 #### Some prerequisites
+If the maf alignments are generated from cactus```(https://github.com/ComparativeGenomicsToolkit/cactus)```, you can directly run step2.
+
 1. Make sure every blocks in all maf files you input have a reference, make it be the first row in every block. If you need to adjust the order of taxa(say, A,B,C,D and A is the reference) in blocks, you can use:
    
    ```
@@ -23,4 +25,27 @@ pip install biopython interval3 collections multiprocessing
    mafSorter --maf alignment_Achr1positive --seq A.chr1 > alignment_Achr1positive_sorted.maf
    conda deactivate
    ```
-4. 
+#### Ready to use
+
+Now the files can be used to extracted. 
+```
+length=`grep -m1 "^s " maf1 | awk '{print $6}'`
+python /mnt/c/e/jarvis/assembly/command/linux/try_common_col_withDup_multi_alns_newversion.py --input maf1 maf2 maf3 ... --output common.maf --global_num 5 --global_start 0 --global_end ${length}
+```
+If the chromosome length of the reference is to long (say, > 10925261), it would be better to seperate the input maf files equally into several parts, divided by ```k```, which can be set by yourself.
+You can use ```seperate_maffile_by_index.py```, the whole code is
+```
+input_maf_files=(maf1 maf2 maf3...)
+k=2185052
+length=`grep -m1 "^s " maf1 | awk '{print $6}'`
+num=$((${length}/${k}))
+
+for i in $(seq 1 ${num}); do start=$((${i}*${k}-${k})); end=$((${i}*${k})); for f in ${input_maf_files[@]}; do python seperate_maffile_by_index.py ${f} ${start} ${end} part${i}_${f}; done; python try_common_col_withDup_multi_alns_newversion.py --input part${i}_maf1 part${i}_maf2 part${i}_maf3 --output part${i}_common.maf --global_num 5 --global_start ${start} --global_end ${end};done
+
+for f in ${input_maf_files[@]}; do python seperate_maffile_by_index.py ${f} $((${num}*${k})) ${length} part$((${num}+1))_${f}; done
+
+python try_common_col_withDup_multi_alns_newversion.py --input part$((${num}+1))_maf1 part$((${num}+1))_maf2 part$((${num}+1))_maf3 --output part$((${num}+1))_common.maf --global_num 5 --global_start $((${num}*${k})) --global_end ${length}
+
+for i in $((seq 1 $((${num}+1)))); do cat part${i}_common.maf >> common.maf
+```
+
