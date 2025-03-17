@@ -10,7 +10,7 @@ Install the necessary dependencies using:
 pip install biopython interval3 collections multiprocessing
 ```
 ## Prerequisites
-If the maf alignments are generated using cactus```(https://github.com/ComparativeGenomicsToolkit/cactus)```, you can just see **step2**.
+If the maf alignments are generated using [Cactus](https://github.com/ComparativeGenomicsToolkit/cactus), you can just see **step2**.
 
 ### Step 1: Ensure a consistent reference in all MAF files
 Each block in all input MAF files must have a **reference sequence**, which should be positioned as the **first row** in every block.
@@ -28,7 +28,7 @@ To separate MAF files by chromosome, use the provided script:
 python separate_maf.py maf output_directory
 ```
 ### Step 3: Adjust block orientation and order
-To ensure that all blocks are sorted by reference coordinates and that the reference strand is positive, you can use ```https://github.com/dentearl/mafTools```
+To ensure that all blocks are sorted by reference coordinates and that the reference strand is positive, you can use [mafTools](https://github.com/dentearl/mafTools)
 ```
 conda create -n py2 python=2.7
 conda activate py2
