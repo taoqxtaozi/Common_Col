@@ -28,6 +28,10 @@ python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py --tax
 ```
 Here in default we use fully resolved binary trees as guide trees, if you decide to use ```X``` guide trees, but you want to include one star tree, when generating guide trees with our script, you can set ```--num_trees``` as ```X-1```
 
+### Step 2: Align taxa with Progressive Cactus
+Like now we get N guide trees, we need to add that into the alignment set files, ```aln1.txt```, ```aln2.txt```, ```aln3.txt```, ..., ```alnN.txt```, respectively, which is needed in Progressive cactus.
+
+
 ## Prerequisites
 If the maf alignments are generated using [Cactus](https://github.com/ComparativeGenomicsToolkit/cactus), you can just see **step2**.
 
