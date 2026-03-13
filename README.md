@@ -9,6 +9,25 @@ Install the necessary dependencies using:
 ```
 pip install biopython interval3 collections multiprocessing
 ```
+
+## Build alignment with Progressive alignment
+### Step 1: Decide how many guide-tree-based alignments used to extract the consensus
+We build our own script ```generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py``` to generate fully resolved binary guide trees. In the default mode, we set RF-distance at least 1 and triplet distance at least 2/3, and the species evolve along "yule" mode. In the parameter setting, users can set RF-distance with ```--rf-threshold```, set triplet distance with ```--t-threshold```, and evolution model can be set with ```--model``` choosing from 'yule' or 'uniform'. And need to set the outgroup with ```--outgroup``` and input the ingroup taxa with ```--taxa```.
+
+For the number of guide tree used, in default we use four, for making a balance between alignment quality and resource usage. And with enough computation resources, we suggest that, if ```n```, the number of the ingroup taxa, is no more than ten, we suggest to use ```n``` guide trees, and if it is more than 10, we suggest to use ten. And here the ingroup taxa, we mean the number of unresolved polytomies, that is, if there are groups that the users wish to fix in all guide trees, they are seen as one "taxon".
+
+The example of how to use is: 
+If the ingroup taxa are A, B, C, D, E, and F; the outgroup is G
+If use the default mode：
+```
+python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py --taxa A B C D E F --outgroup G
+```
+If you want to relax the constraints among the trees, like make RF distance no less than 0.8, and make triplet distance no less than 0.6; and let taxa evolve along uniform model, also you want to fix (A,B), and (C,D) as two cherries in all guide trees, and want to get 6 guide trees, you can set:
+```
+python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py --taxa "(A,B)" "(C,D)" E F --outgroup G --num_trees 6 --model 'uniform' --rf-threshold 0.8 --t-threshold 0.6
+```
+Here in default we use fully resolved binary trees as guide trees, if you decide to use ```X``` guide trees, but you want to include one star tree, when generating guide trees with our script, you can set ```--num_trees``` as ```X-1```
+
 ## Prerequisites
 If the maf alignments are generated using [Cactus](https://github.com/ComparativeGenomicsToolkit/cactus), you can just see **step2**.
 
