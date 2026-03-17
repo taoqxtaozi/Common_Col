@@ -1,85 +1,176 @@
 # Common-col
-Extract common column alignments based on coordinates from multiple MAF (Multiple Alignment Format) files.
+
+Extract consensus alignments by retaining only the columns that are shared across multiple MAF (Multiple Alignment Format) files based on genomic coordinates.
 
 ## Requirements
-**Python version**: Python 3.6 or later
 
-**Required packages**:
-Install the necessary dependencies using:
-```
-pip install biopython interval3 collections multiprocessing
-```
+**Python version**  
+Python 3.6 or later
 
-## Build alignment with Progressive alignment
-### Step 1: Decide how many guide-tree-based alignments used to extract the consensus
-We build our own script ```generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py``` to generate fully resolved binary guide trees. In the default mode, we set RF-distance at least 1 and triplet distance at least 2/3, and the species evolve along "yule" mode. In the parameter setting, users can set RF-distance with ```--rf-threshold```, set triplet distance with ```--t-threshold```, and evolution model can be set with ```--model``` choosing from 'yule' or 'uniform'. And need to set the outgroup with ```--outgroup``` and input the ingroup taxa with ```--taxa```.
+**Python packages**  
+Install the required package with:
 
-For the number of guide tree used, in default we use four, for making a balance between alignment quality and resource usage. And with enough computation resources, we suggest that, if ```n```, the number of the ingroup taxa, is no more than ten, we suggest to use ```n``` guide trees, and if it is more than 10, we suggest to use ten. And here the ingroup taxa, we mean the number of unresolved polytomies, that is, if there are groups that the users wish to fix in all guide trees, they are seen as one "taxon".
+```bash
+pip install biopython interval3
+````
 
-The example of how to use is: 
-If the ingroup taxa are A, B, C, D, E, and F; the outgroup is G
-If use the default mode：
-```
+`collections` and `multiprocessing` are part of the Python standard library and do not need to be installed separately.
+
+---
+
+## Workflow for alignments generated with Progressive Cactus
+
+### Step 1. Decide how many guide-tree-based alignments to use
+
+We provide the script `generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py` to generate fully resolved binary guide trees.
+
+In the default setting:
+
+* the Robinson–Foulds (RF) distance between guide trees is 1,
+* the triplet distance is at least 2/3,
+* and taxa evolve under the `yule` model.
+
+Users can modify these settings with:
+
+* `--rf-threshold` to set the minimum RF distance,
+* `--t-threshold` to set the minimum triplet distance,
+* `--model` to choose the tree-generation model (`yule` or `uniform`),
+* `--outgroup` to specify the outgroup,
+* `--taxa` to specify the ingroup taxa.
+
+By default, we recommend using **four** guide trees as a balance between alignment quality and computational cost. If sufficient computational resources are available, we suggest the following rule:
+
+* if `n` (the number of ingroup taxa) is no more than 10, use `n` guide trees;
+* if `n` is greater than 10, use 10 guide trees.
+
+Here, the number of ingroup taxa refers to the number of unresolved units. If some taxa are constrained to remain grouped together in all guide trees, such as fixed cherries, they are treated as one unit.
+
+#### Example
+
+Suppose the ingroup taxa are `A B C D E F`, and the outgroup is `G`.
+
+Using the default settings:
+
+```bash
 python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py --taxa A B C D E F --outgroup G
 ```
-If you want to relax the constraints among the trees, like make RF distance no less than 0.8, and make triplet distance no less than 0.6; and let taxa evolve along uniform model, also you want to fix (A,B), and (C,D) as two cherries in all guide trees, and want to get 6 guide trees, you can set:
-```
-python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py --taxa "(A,B)" "(C,D)" E F --outgroup G --num_trees 6 --model 'uniform' --rf-threshold 0.8 --t-threshold 0.6
-```
-Here in default we use fully resolved binary trees as guide trees, if you decide to use ```X``` guide trees, but you want to include one star tree, when generating guide trees with our script, you can set ```--num_trees``` as ```X-1```
 
-### Step 2: Align taxa with Progressive Cactus
-Like now we get N guide trees, we need to add that into the alignment set files, ```aln1.txt```, ```aln2.txt```, ```aln3.txt```, ..., ```alnN.txt```, respectively, which is needed in Progressive cactus.
+If you want to relax the distance constraints, use the `uniform` model, fix `(A,B)` and `(C,D)` as cherries in all guide trees, and generate 6 guide trees:
 
+```bash
+python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py \
+  --taxa "(A,B)" "(C,D)" E F \
+  --outgroup G \
+  --num_trees 6 \
+  --model uniform \
+  --rf-threshold 0.8 \
+  --t-threshold 0.6
+```
 
-## Prerequisites
-If the maf alignments are generated using [Cactus](https://github.com/ComparativeGenomicsToolkit/cactus), you can just see **step2**.
+By default, this script generates fully resolved binary guide trees only. If you want to use `X` guide trees in total and include one star tree, generate `X-1` binary trees with this script and add the star tree separately.
 
-### Step 1: Ensure a consistent reference in all MAF files
-Each block in all input MAF files must have a **reference sequence**, which should be positioned as the **first row** in every block.
-If you need to adjust the order of taxa(e.g., A,B,C,D with A as the reference) in blocks, use the following command:   
+### Step 2. Build alignments with Progressive Cactus
+
+After generating `N` guide trees, prepare `N` alignment input files for [Progressive Cactus](https://github.com/ComparativeGenomicsToolkit/cactus), for example:
+
+* `aln1.txt`
+* `aln2.txt`
+* `aln3.txt`
+* ...
+* `alnN.txt`
+
+Each file should contain one guide tree followed by the paths to the corresponding genome files.
+
+For example, `aln1.txt` may look like:
+
+```text
+(G,(A,(B,(C,(D,(E,F))))));
+G path_to_GenomeFile_of_G
+A path_to_GenomeFile_of_A
+B path_to_GenomeFile_of_B
+C path_to_GenomeFile_of_C
+D path_to_GenomeFile_of_D
+E path_to_GenomeFile_of_E
+F path_to_GenomeFile_of_F
 ```
-conda install bioconda::phast
-maf_parse -O A,B,C,D input1.maf > input1_order.maf
+
+Then run Progressive Cactus. Parameters such as `--defaultMemory`, `--maxCores`, and `--maxMemory` can be adjusted according to genome size and available computational resources.
+
+```bash
+cactus --realTimeLogging --defaultMemory 50G --maxCores 80 --maxMemory 300G ./jobstoreclusteraln1 ./aln1.txt ./aln1.hal
 ```
-### Step 2: Ensure that all MAF files contain alignments for only one reference chromosome
-All input MAF files (e.g., ```maf1```, ```maf2```, ```maf3```) should contain alignments for only **one chromosome** of the reference.
-For example, if the reference sequence in ```maf1```, ```maf2```, and ```maf3``` is ```A.chr1```, all alignment blocks should start with ```A.chr1```.
-It is **not allowed** to mix multiple reference chromosomes (e.g., both ```A.chr1``` and ```A.chr2```).
-To separate MAF files by chromosome, use the provided script:
+
+Convert HAL to MAF using `cactus-hal2maf`. Here we use HAL version 2.9.2, which supports `--dupeMode single`.
+
+```bash
+cactus-hal2maf --dupeMode single --chunkSize 500000 --defaultCores 10.0 --refGenome G --noAncestors jobstorehal2mafaln1 aln1.hal aln1.maf
 ```
-python separate_maf.py maf output_directory
+
+Repeat this for all guide trees to obtain:
+
+* `aln1.maf`
+* `aln2.maf`
+* ...
+* `alnN.maf`
+
+Place these MAF files in the same directory as the pipeline scripts, then run:
+
+```bash
+bash run_pipeline.sh --input aln1.maf aln2.maf aln3.maf ... alnN.maf --output consensus.maf
 ```
-### Step 3: Adjust block orientation and order
-To ensure that all blocks are sorted by reference coordinates and that the reference strand is positive, you can use [mafTools](https://github.com/dentearl/mafTools)
-```
+
+---
+
+## Workflow for MAF files not generated with Progressive Cactus
+
+If the input MAF files were **not** generated by [Progressive Cactus](https://github.com/ComparativeGenomicsToolkit/cactus), they must satisfy several constraints before running the consensus-extraction pipeline.
+
+These checks and preprocessing steps are already integrated into `run_pipeline2.sh`, so users can run the pipeline directly once the required tools are installed.
+
+### Install mafTools
+
+[mafTools](https://github.com/dentearl/mafTools) is required:
+
+```bash
 conda create -n py2 python=2.7
 conda activate py2
 conda install genomedk::maftools
-mafStrander --maf alignment_Achr1.maf --seq A.chr1 --strand + > alignment_Achr1positive.maf
-mafSorter --maf alignment_Achr1positive --seq A.chr1 > alignment_Achr1positive_sorted.maf
 conda deactivate
 ```
-## Usage
 
-Once the input MAF files are properly formatted, you can run the script to extract common alignments:
+Then run:
+
+```bash
+bash run_pipeline2.sh --input aln1.maf aln2.maf aln3.maf ... alnN.maf --reference G --output consensus.maf
 ```
-length=`grep -m1 "^s " maf1 | awk '{print $6}'`
-python try_common_col_withDup_multi_alns_newversion.py \
-   --input maf1 maf2 maf3 ... \
-   --output common.maf --global_num 5 \
-   --global_start 0 --global_end ${length}
-```
-### Handling large reference chromosomes
-If the reference chromosome ```length``` is to long (e.g., **> 10,925,261 bp**), it is recommended to **split** the input MAF files into smaller parts.
-You can divide the input equally using a custom **partition size (```k```)**, which you can set manually.
-Run the following command to split and process the MAF files:
-```
-bash split_and_process --input maf1 maf2 maf3... -k 2185052 --global_num 5
-```
-The reults will be saved in ```common.maf```
+
+### Constraint 1. Remove duplicate sequences within each block
+
+Each block in every input MAF file must contain **at most one sequence per taxon**. If a block contains duplicated sequences from the same taxon, duplicates must be removed so that only one sequence is retained.
+
+This step is handled using `mafDuplicateFilter` from `mafTools`.
+
+### Constraint 2. Ensure a consistent reference sequence
+
+Each block in every input MAF file must contain the **reference sequence**, and the reference must appear in the **first row** of the block.
+
+Blocks without the reference sequence are discarded.
+
+### Constraint 3. Standardize block orientation and coordinate order
+
+To ensure that all blocks are ordered consistently by reference coordinates and that the reference strand is positive, the pipeline uses:
+
+* `mafStrander`
+* `mafSorter`
+
+from `mafTools`.
+
+---
 
 ## Notes
-- Ensure that all MAF files follow the correct formatting before running the script.
-- If you encounter performance issues, consider **parallelizing** the processing or **optimizing memory usage**.
-- For more details, refer to the documentation of the tools mentioned above.
+
+* Make sure all input MAF files are correctly formatted before running the pipeline.
+* For large datasets, runtime and memory usage may increase substantially.
+* If needed, users may modify the pipeline for parallel execution.
+* Please refer to the documentation of Progressive Cactus, HAL, and mafTools for additional details.
+
