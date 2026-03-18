@@ -116,7 +116,7 @@ Repeat this for all guide trees to obtain:
 Place these MAF files in the same directory as the pipeline scripts, then run:
 
 ```bash
-bash run_pipeline.sh --input aln1.maf aln2.maf aln3.maf ... alnN.maf --output consensus.maf
+bash RunPipelineUseThis.sh  --input aln1.maf aln2.maf aln3.maf ... alnN.maf --output consensus.maf --threads Num --common_workers Num
 ```
 
 ---
@@ -141,7 +141,7 @@ conda deactivate
 Then run:
 
 ```bash
-bash run_pipeline2.sh --input aln1.maf aln2.maf aln3.maf ... alnN.maf --reference G --output consensus.maf
+bash RunNotFromProgressiveCactusPipelineUseThis.sh  --input aln1.maf aln2.maf aln3.maf ... alnN.maf --output consensus.maf --threads Num --common_workers Num
 ```
 
 ### Constraint 1. Remove duplicate sequences within each block
