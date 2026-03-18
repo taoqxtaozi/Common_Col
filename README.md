@@ -116,8 +116,9 @@ Repeat this for all guide trees to obtain:
 Place these MAF files in the same directory as the pipeline scripts, then run:
 
 ```bash
-bash RunPipelineUseThis.sh  --input aln1.maf aln2.maf aln3.maf ... alnN.maf --output consensus.maf --threads Num --common_workers Num
+bash RunPipelineUseThis.sh  --input aln1.maf aln2.maf aln3.maf ... alnN.maf --pre output_prefix --reference G --threads Num --common_workers Num
 ```
+This will produce two output files, `output_prefix.maf` and `output_prefix.fasta`. In `output_prefix.fasta`, the reference taxon `G` specified by `--reference` is placed first, and the remaining taxa are arranged in alphabetical order.
 
 ---
 
@@ -141,8 +142,10 @@ conda deactivate
 Then run:
 
 ```bash
-bash RunNotFromProgressiveCactusPipelineUseThis.sh  --input aln1.maf aln2.maf aln3.maf ... alnN.maf --output consensus.maf --threads Num --common_workers Num
+bash RunNotFromProgressiveCactusPipelineUseThis.sh  --input aln1.maf aln2.maf aln3.maf ... alnN.maf --pre output_prefix --reference G --threads Num --common_workers Num
 ```
+This will produce two output files, `output_prefix.maf` and `output_prefix.fasta`. In `output_prefix.fasta`, the reference taxon `G` specified by `--reference` is placed first, and the remaining taxa are arranged in alphabetical order.
+
 
 ### Constraint 1. Remove duplicate sequences within each block
 
