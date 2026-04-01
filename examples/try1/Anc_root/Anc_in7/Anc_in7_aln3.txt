@@ -1,0 +1,6 @@
+(GALGA,(FALPE,((Anc_in6,CARCR)Anc_in7_1,Anc_in4)Anc_in7_2)Anc_in7_3)Anc_in7_GALGA;
+Anc_in4 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/Anc_root/Anc_in7/Anc_in4/Anc_in4.fa
+Anc_in6 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/Anc_root/Anc_in7/Anc_in6/Anc_in6.fa
+CARCR /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/CARCR.fa
+FALPE /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/FALPE.fa
+GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/GALGA.fa

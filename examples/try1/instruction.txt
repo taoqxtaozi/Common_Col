@@ -1,0 +1,127 @@
+## Processed tree used for planning (auto-named internal nodes if needed):
+(GALGA,((HALLE,CATAU)Anc_in1,(LEPDI,(APAVI,PICPU)Anc_in2)Anc_in3,COLST,TYTAL,(CARCR,FALPE,(MELUN,NESNO)Anc_in4,(ACACH,(CORBR,(GEOFO,TAEGU)AncAA)Anc_in5)Anc_in6)Anc_in7)Anc_in8)Anc_root;
+
+## Tree view:
+Anc_root
+    ├── GALGA [reference]
+    └── Anc_in8
+        ├── Anc_in1
+        │   ├── HALLE
+        │   └── CATAU
+        ├── Anc_in3
+        │   ├── LEPDI
+        │   └── Anc_in2
+        │       ├── APAVI
+        │       └── PICPU
+        ├── COLST
+        ├── TYTAL
+        └── Anc_in7
+            ├── CARCR
+            ├── FALPE
+            ├── Anc_in4
+            │   ├── MELUN
+            │   └── NESNO
+            └── Anc_in6
+                ├── ACACH
+                └── Anc_in5
+                    ├── CORBR
+                    └── AncAA
+                        ├── GEOFO
+                        └── TAEGU
+
+## Copy and run all lines below that do not start with ##
+## Command0
+RUN_PATH=/picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1
+
+## Run the following commands:
+## Commands in the same block can be run in parallel if they are marked so.
+## You may need to adjust Cactus resource parameters yourself, e.g. --defaultMemory --maxCores --maxMemory.
+
+## Level 1: Command1~Command4 can be run in parallel
+## Command1  [Anc_in1; fixed single-run]
+cactus --root Anc_in1 ${RUN_PATH}/Anc_root/Anc_in1/jobstorecluster_Anc_in1_aln1 ${RUN_PATH}/Anc_root/Anc_in1/Anc_in1_aln1.txt ${RUN_PATH}/Anc_root/Anc_in1/Anc_in1_aln1.hal
+hal2fasta ${RUN_PATH}/Anc_root/Anc_in1/Anc_in1_aln1.hal Anc_in1 > ${RUN_PATH}/Anc_root/Anc_in1/Anc_in1.fa
+
+## Command2  [Anc_in3; fixed single-run]
+cactus --root Anc_in3 ${RUN_PATH}/Anc_root/Anc_in3/jobstorecluster_Anc_in3_aln1 ${RUN_PATH}/Anc_root/Anc_in3/Anc_in3_aln1.txt ${RUN_PATH}/Anc_root/Anc_in3/Anc_in3_aln1.hal
+hal2fasta ${RUN_PATH}/Anc_root/Anc_in3/Anc_in3_aln1.hal Anc_in3 > ${RUN_PATH}/Anc_root/Anc_in3/Anc_in3.fa
+
+## Command3  [Anc_in4; fixed single-run]
+cactus --root Anc_in4 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in4/jobstorecluster_Anc_in4_aln1 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in4/Anc_in4_aln1.txt ${RUN_PATH}/Anc_root/Anc_in7/Anc_in4/Anc_in4_aln1.hal
+hal2fasta ${RUN_PATH}/Anc_root/Anc_in7/Anc_in4/Anc_in4_aln1.hal Anc_in4 > ${RUN_PATH}/Anc_root/Anc_in7/Anc_in4/Anc_in4.fa
+
+## Command4  [Anc_in6; fixed single-run]
+cactus --root Anc_in6 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in6/jobstorecluster_Anc_in6_aln1 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in6/Anc_in6_aln1.txt ${RUN_PATH}/Anc_root/Anc_in7/Anc_in6/Anc_in6_aln1.hal
+hal2fasta ${RUN_PATH}/Anc_root/Anc_in7/Anc_in6/Anc_in6_aln1.hal Anc_in6 > ${RUN_PATH}/Anc_root/Anc_in7/Anc_in6/Anc_in6.fa
+
+## Level 2: Command5~Command8 can be run in parallel
+## Command5  [Anc_in7; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/Anc_in7/jobstorecluster_Anc_in7_aln1 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln1.txt ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln1.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/Anc_in7/jobstorehal2maf_Anc_in7_aln1 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln1.hal ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln1.maf
+
+## Command6  [Anc_in7; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/Anc_in7/jobstorecluster_Anc_in7_aln2 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln2.txt ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln2.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/Anc_in7/jobstorehal2maf_Anc_in7_aln2 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln2.hal ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln2.maf
+
+## Command7  [Anc_in7; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/Anc_in7/jobstorecluster_Anc_in7_aln3 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln3.txt ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln3.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/Anc_in7/jobstorehal2maf_Anc_in7_aln3 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln3.hal ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln3.maf
+
+## Command8  [Anc_in7; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/Anc_in7/jobstorecluster_Anc_in7_aln4 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln4.txt ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln4.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/Anc_in7/jobstorehal2maf_Anc_in7_aln4 ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln4.hal ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln4.maf
+
+## After Command5~Command8 are done, run Command9
+## Command9  [Anc_in7; extract consensus and infer ancestor]
+bash /picb/phylcomb/taoqixin/software/cactus-bin-v2.9.2/GALGA_APAVI_CATAU_LEPDI/code0328/RunPipelineUseThis.sh \
+  --input ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln1.maf ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln2.maf ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln3.maf ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_aln4.maf \
+  --reference GALGA \
+  --pre ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7_consensus \
+  --threads 15 \
+  --common_workers 5 \
+  --genome_path ${RUN_PATH}/Anc_root/Anc_in7/Anc_in7.genome.txt \
+  --Anc_name Anc_in7 \
+  --ModelFile /picb/phylcomb/taoqixin/software/cactus-bin-v2.9.2/GALGA_APAVI_CATAU_LEPDI/code0328/tryMLstartree.mod
+
+## Level 3: Command10~Command13 can be run in parallel
+## Command10  [Anc_root; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/jobstorecluster_Anc_root_aln1 ${RUN_PATH}/Anc_root/Anc_root_aln1.txt ${RUN_PATH}/Anc_root/Anc_root_aln1.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/jobstorehal2maf_Anc_root_aln1 ${RUN_PATH}/Anc_root/Anc_root_aln1.hal ${RUN_PATH}/Anc_root/Anc_root_aln1.maf
+
+## Command11  [Anc_root; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/jobstorecluster_Anc_root_aln2 ${RUN_PATH}/Anc_root/Anc_root_aln2.txt ${RUN_PATH}/Anc_root/Anc_root_aln2.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/jobstorehal2maf_Anc_root_aln2 ${RUN_PATH}/Anc_root/Anc_root_aln2.hal ${RUN_PATH}/Anc_root/Anc_root_aln2.maf
+
+## Command12  [Anc_root; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/jobstorecluster_Anc_root_aln3 ${RUN_PATH}/Anc_root/Anc_root_aln3.txt ${RUN_PATH}/Anc_root/Anc_root_aln3.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/jobstorehal2maf_Anc_root_aln3 ${RUN_PATH}/Anc_root/Anc_root_aln3.hal ${RUN_PATH}/Anc_root/Anc_root_aln3.maf
+
+## Command13  [Anc_root; guide-tree-specific alignment]
+cactus ${RUN_PATH}/Anc_root/jobstorecluster_Anc_root_aln4 ${RUN_PATH}/Anc_root/Anc_root_aln4.txt ${RUN_PATH}/Anc_root/Anc_root_aln4.hal
+cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome GALGA --noAncestors ${RUN_PATH}/Anc_root/jobstorehal2maf_Anc_root_aln4 ${RUN_PATH}/Anc_root/Anc_root_aln4.hal ${RUN_PATH}/Anc_root/Anc_root_aln4.maf
+
+## After Command10~Command13 are done, run Command14
+## Command14  [Anc_root; extract consensus and infer ancestor]
+bash /picb/phylcomb/taoqixin/software/cactus-bin-v2.9.2/GALGA_APAVI_CATAU_LEPDI/code0328/RunPipelineUseThis.sh \
+  --input ${RUN_PATH}/Anc_root/Anc_root_aln1.maf ${RUN_PATH}/Anc_root/Anc_root_aln2.maf ${RUN_PATH}/Anc_root/Anc_root_aln3.maf ${RUN_PATH}/Anc_root/Anc_root_aln4.maf \
+  --reference GALGA \
+  --pre ${RUN_PATH}/Anc_root/Anc_root_consensus \
+  --threads 15 \
+  --common_workers 5 \
+  --genome_path ${RUN_PATH}/Anc_root/Anc_root.genome.txt \
+  --Anc_name Anc_root \
+  --ModelFile /picb/phylcomb/taoqixin/software/cactus-bin-v2.9.2/GALGA_APAVI_CATAU_LEPDI/code0328/tryMLstartree.mod
+
+## After Command14 is done, run descendant-HAL regrafting:
+bash ${RUN_PATH}/consensus_regraft.sh
+
+## The planning step is done. The final root-level workspace is under:
+## ${RUN_PATH}/Anc_root
+
+############################################################
+# Final output summary
+# RUN_PATH = /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1
+# Final consensus MAF   : /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/final_output/Anc_root_consensus_Anc_root.allTaxa.maf
+# Final consensus FASTA : /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/final_output/Anc_root_consensus_Anc_root.allTaxa.fasta
+# Final inferred genome FASTA for Anc_root: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/final_output/Anc_root.fa
+############################################################

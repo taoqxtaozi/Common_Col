@@ -1,0 +1,5 @@
+(ACACH,(CORBR,(GEOFO,TAEGU)AncAA)Anc_in5)Anc_in6;
+ACACH /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/ACACH.fa
+CORBR /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/CORBR.fa
+GEOFO /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/GEOFO.fa
+TAEGU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/TAEGU.fa
