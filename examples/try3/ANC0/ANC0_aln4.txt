@@ -1,0 +1,6 @@
+(GALGA,(COLST,((CATAU,TYTAL)Anc_in1_1,Anc1)Anc_in1_2)Anc_in1)ANC0;
+Anc1 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try3/ANC0/Anc1/Anc1.fa
+CATAU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/CATAU.fa
+COLST /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/COLST.fa
+GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/GALGA.fa
+TYTAL /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/TYTAL.fa
