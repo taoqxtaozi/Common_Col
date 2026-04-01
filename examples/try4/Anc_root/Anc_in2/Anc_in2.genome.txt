@@ -1,0 +1,5 @@
+CATAU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/CATAU.fa
+COLST /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/COLST.fa
+GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/GALGA.fa
+LEPDI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/LEPDI.fa
+TYTAL /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/TYTAL.fa

@@ -1,0 +1,6 @@
+(GALGA,((HALLE,PICPU)Anc_in1,(APAVI,Anc_in2)Anc_in3)Anc_in4)Anc_root;
+APAVI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/APAVI.fa
+Anc_in2 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try4/Anc_root/Anc_in2/Anc_in2.fa
+GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/GALGA.fa
+HALLE /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/HALLE.fa
+PICPU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/PICPU.fa
