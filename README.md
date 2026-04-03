@@ -74,11 +74,12 @@ The input tree must be **rooted**, and it may be either **partially resolved** o
 At each unresolved internal node, the pipeline generates multiple guide-tree-specific alignments and combines them into a consensus alignment:
 
 - For a polytomy with exactly **three ingroup units**, the pipeline enumerates **all three possible rooted binary topologies** and builds one alignment for each topology.
-- For a polytomy with **more than three ingroup units**, the pipeline generates guide trees automatically using our script `generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py`. By default, **four** guide trees are used, although the user can change this number.
+- For a polytomy with **more than three ingroup units**, the pipeline generates fully resolved binary guide trees automatically using our script `generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py`. By default, **four** guide trees are used, although the user can change this number through the global `--guide-num-trees` option of `make_plan.sh`.
+- See **Section 2.6** for more details on guide-tree generation.
 
 For each lower-level unresolved node, the pipeline extracts a consensus alignment from these guide-tree-specific alignments and infers an ancestor genome from that consensus. This inferred consensus ancestor is then used as an input genome for the next higher-level alignment step. The procedure continues hierarchically until the top level is reached.
 
-Finally, lower-level sub-consensus alignments are regrafted into the top-level consensus alignment. 
+Finally, lower-level sub-consensus alignments are regrafted into the top-level consensus alignment.
 
 **The pipeline then outputs the final consensus alignment for all taxa in both MAF and FASTA format, together with the inferred ancestor genome.**
 
@@ -116,6 +117,8 @@ D D.fa
 
 ### 2.2 Basic usage
 
+Run the following command with the default settings:
+
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
   --tree-file aln.tre \
@@ -124,6 +127,8 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
   --threads Num1 \
   --common_workers Num2
 ```
+
+See **Section 2.5** for parameter explanations.
 
 ### 2.3 More examples
 
@@ -143,7 +148,7 @@ Use a rooted Newick string directly:
 
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
-  --tree '(A,(B,C),D);' \
+  --tree '(A,(B,C,D));' \
   --reference A \
   --paths aln.txt \
   --threads 60 \
@@ -198,7 +203,7 @@ The generated files describe:
 
 In most cases, the user only needs to **copy and paste the commands from `instruction.txt`** and run them in order.
 
-**After running commands from instruction, you will get the consensus outputs.** 
+**After running commands from instruction, you will get the consensus outputs.**
 
 ### 2.5 Parameter-by-parameter explanation for `make_plan.sh`
 
@@ -291,7 +296,7 @@ Example:
 ```
 
 `--guide-num-trees`  
-Passed through to the guide-tree generator as `--num_trees`. This controls how many guide trees are generated for polytomies with more than three ingroup units. By default, the pipeline uses **4** guide trees for such nodes unless the user specifies otherwise.  
+Passed through to the guide-tree generator as `--num_trees`. This controls how many guide trees are generated for polytomies with more than three ingroup units. By default, the pipeline uses **4** guide trees for such nodes unless the user specifies otherwise. Under strict thresholds, if the generator cannot find the requested number of mutually distant guide trees, it returns the largest valid set it can find.  
 Example:
 
 ```bash
@@ -393,6 +398,80 @@ Example:
 ```bash
 --separate_workers 4
 ```
+
+### 2.6 Guide-tree generation in the main workflow
+
+In the main workflow, guide-tree generation is handled automatically during the planning step by `make_plan.sh`. After planning finishes, the generated guide trees and the corresponding downstream commands are already written into the output directory, so users usually do not need to run the guide-tree generator manually.
+
+The default strategy is:
+
+- for a polytomy with exactly **three ingroup units**, the pipeline uses **all three rooted triples**;
+- for a polytomy with **more than three ingroup units**, the pipeline generates **fully resolved binary guide trees automatically**, using **4** guide trees by default.
+
+Guide-tree generation for nodes with more than three ingroup units is performed by the script `generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py`.
+
+Under the default strict setting:
+
+- the normalized Robinson–Foulds (RF) distance between any two guide trees is required to be **1**;
+- the normalized triplet distance between any two guide trees is required to be at least **2/3**;
+- guide trees are sampled under the **`yule`** model.
+
+These settings can be passed globally to `make_plan.sh`, for example:
+
+```bash
+bash ${ConsensusExtractionPATH}/make_plan.sh \
+  --tree-file aln.tre \
+  --reference A \
+  --paths aln.txt \
+  --threads 60 \
+  --common_workers 15 \
+  --guide-num-trees 4 \
+  --guide-model yule \
+  --guide-rf-threshold 1 \
+  --guide-t-threshold 0.6666667
+```
+
+By default, these guide-tree-generation settings are applied **globally** across the hierarchical workflow, rather than specified separately for each level or subproblem.
+
+In practice, under strict thresholds, the generator may not always find the requested number of mutually distant guide trees. In such cases, it returns the **largest valid set** it can find under the current constraints. If users want more guide trees or a less restrictive search, they can relax the distance thresholds or adjust related generator parameters.
+
+Users may modify:
+
+- `--guide-num-trees` to change how many guide trees are requested for polytomies with more than three ingroup units;
+- `--guide-model` to choose the tree-generation model (`yule` or `uniform`);
+- `--guide-rf-threshold` to change the minimum normalized RF distance;
+- `--guide-t-threshold` to change the minimum normalized triplet distance;
+- `--guide-max-tries`, `--guide-restarts`, and `--guide-seed` to control the search behavior.
+
+If users want to use different guide-tree-generation settings for specific levels or unresolved nodes, they can run the relevant generator commands separately and then edit or rerun the corresponding commands in the planning output manually.
+
+#### Run the guide-tree generator directly for level-specific guide-tree settings
+
+Users may run the guide-tree generator directly when different alignment levels or unresolved nodes need different numbers of guide trees or different guide-tree-generation settings.
+
+Suppose the ingroup taxa are `A B C D E F`, and the outgroup is `G`.
+
+Using the default settings:
+
+```bash
+python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py \
+  --taxa A B C D E F \
+  --outgroup G
+```
+
+If you want to relax the distance constraints, use the `uniform` model, fix `(A,B)` and `(C,D)` as cherries in all guide trees, and generate 6 guide trees:
+
+```bash
+python generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py \
+  --taxa "(A,B)" "(C,D)" E F \
+  --outgroup G \
+  --num_trees 6 \
+  --model uniform \
+  --rf-threshold 0.8 \
+  --t-threshold 0.6
+```
+
+Here, the number of ingroup taxa refers to the number of unresolved units. If some taxa are constrained to remain grouped together in all guide trees, such as fixed cherries, they are treated as one unit.
 
 The above workflow is the **genome-start workflow**.
 
