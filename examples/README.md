@@ -26,7 +26,8 @@ tryX/
 ### Components
 
 - `aln.txt`  
-  Genome path file used as input.
+  Genome path file used as input.  
+  Although `aln.txt` may contain taxa not present in `aln.tre`, the pipeline automatically identifies and uses only the taxa specified in `aln.tre`.
 
 - `aln.tre`  
   Rooted tree used for the run.
