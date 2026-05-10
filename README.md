@@ -51,7 +51,6 @@ Among them,
 - `halAppendSubtree`
 - `halWriteNucleotides`
 - `maf2hal`
-- `phyloFit`
 
 are from the **HAL** package [2]:
 
@@ -61,7 +60,7 @@ In addition, the bundled `halWriteNucleotides` was recompiled following the sugg
 
 <https://github.com/ComparativeGenomicsToolkit/hal/issues/283>
 
-Besides, seqkit [3] is also included.
+Besides, seqkit [3] and phyloFit [5] are also included.
 
 The pipeline scripts automatically run `chmod +x` on the bundled executables when needed, so users usually do not need to set executable permissions manually.
 
@@ -787,3 +786,5 @@ from `mafTools`.
 [3]. Shen W, Le S, Li Y, Hu F. SeqKit: A Cross-Platform and Ultrafast Toolkit for FASTA/Q File Manipulation. PLoS One. 2016 Oct 5;11(10):e0163962. doi: 10.1371/journal.pone.0163962. PMID: 27706213; PMCID: PMC5051824.
 
 [4]. Genome Res. 2014 Dec;24(12):2077-89. doi: 10.1101/gr.174920.114. Epub 2014 Oct 1. Alignathon: a competitive assessment of whole-genome alignment methods.
+
+[5]. Hubisz M J, Pollard K S, Siepel A. PHAST and RPHAST: phylogenetic analysis with space/time models[J]. Briefings in bioinformatics, 2011, 12(1): 41-51.
