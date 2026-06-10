@@ -26,7 +26,7 @@ Optional arguments:
   --planner           Path to plan_partially_resolved_cactus.py
                       (default: same directory as this shell script)
 
-Guide-tree generator options (passed through to generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py):
+Guide-tree generator options (passed through to generate_random_guidetrees_2models_2modes_finalver.py):
   --generator         Path to the generator script
                       (default: same directory as the planner script)
   --generator-python  Python executable used to run the generator
@@ -256,7 +256,7 @@ if [[ ! -f "$PLANNER" ]]; then
 fi
 
 if [[ -z "$GENERATOR" ]]; then
-  GENERATOR="$(cd "$(dirname "$PLANNER")" && pwd)/generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py"
+  GENERATOR="$(cd "$(dirname "$PLANNER")" && pwd)/generate_random_guidetrees_2models_2modes_finalver.py"
 fi
 
 if [[ ! -f "$GENERATOR" ]]; then
