@@ -780,8 +780,6 @@ bash ${ConsensusExtractionPATH}/RunNotFromProgressiveCactusPipelineUseThis.sh \
   --pre output_prefix \
   --reference G \
   --genome_path aln.txt \
-  --Anc_name ${Anc_name} \
-  --ModelFile ${ConsensusExtractionPATH}/tryMLstartree.mod \
   --threads Num \
   --common_workers Num
 ```
@@ -793,12 +791,11 @@ Here:
 
 ### 4.3 Main output files
 
-This workflow also produces the following main output files:
+This workflow produces the same main output files as Optional Workflow A:
 
 - `output_prefix.maf`
 - `output_prefix.fasta`
-- `${Anc_name}.fa`
-- `output_prefix_${Anc_name}.hal`
+- `output_prefix.hal`
 
 Explanation:
 
@@ -808,13 +805,33 @@ Explanation:
 - `output_prefix.fasta`  
   The final consensus alignment converted to concatenated FASTA. In this FASTA file, the reference taxon specified by `--reference` is placed first, and the remaining taxa are arranged in alphabetical order.
 
-- `${Anc_name}.fa`  
-  The inferred ancestor genome for these taxa based on the consensus alignment.
-
-- `output_prefix_${Anc_name}.hal`  
+- `output_prefix.hal`  
   The HAL-format representation of the ancestor-augmented consensus alignment.
 
-Other files retained in the output directory are intermediate or record files generated during preprocessing and ancestor inference.
+If `--ifRefNonOutgroup 0` (also default) the workflow also produces:
+
+- `${Anc_name}.fa`
+
+Explanation:
+
+- `${Anc_name}.fa`  
+  The inferred ancestor genome from the reference and all non-reference taxa.
+
+If `--ifRefNonOutgroup 1`, the workflow also produces:
+
+- `${Anc_name_ofIngroup}.fa`
+- `${Anc_name}.fa`
+
+Explanation:
+
+- `${Anc_name_ofIngroup}.fa`  
+  The inferred ingroup ancestor genome from the non-reference taxa.
+
+- `${Anc_name}.fa`  
+  The inferred top ancestor genome from the reference and the ingroup ancestor.
+
+By default, intermediate files and temporary directories are deleted after the workflow finishes. Use `--ifDeleteImmdiFiles 1` if you want to keep all intermediate files for debugging or inspection.
+
 
 ### 4.4 Parameter notes for `RunNotFromProgressiveCactusPipelineUseThis.sh`
 
@@ -824,8 +841,6 @@ The key parameters are the same as in `RunPipelineUseThis.sh`:
 - `--pre`
 - `--reference`
 - `--genome_path`
-- `--Anc_name`
-- `--ModelFile`
 - `--threads`
 - `--common_workers`
 
@@ -835,6 +850,11 @@ It also supports the same optional parameters:
 - `--chrom_length_threshold`
 - `--global_num`
 - `--separate_workers`
+- `--ModelFile`
+- `--ifRefNonOutgroup`
+- `--Anc_name`
+- `--Anc_name_ofIngroup`
+- `--ifDeleteImmdiFiles`
 
 ### Constraint 1. Remove duplicate sequences within each block
 
