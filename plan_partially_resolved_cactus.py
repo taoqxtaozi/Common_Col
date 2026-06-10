@@ -637,26 +637,7 @@ class Planner:
     def task_primary_hal(self, task: Task) -> Path:
         if task.kind == "consensus":
             # RunPipelineUseThis.sh is called with --pre <task.folder>/consensus.
-            #
-            # For reference-outgroup consensus tasks, the updated pipeline now
-            # retains one nested HAL named consensus.hal:
-            #     (reference,(ingroup leaves)<task.name>)<task.name>_<reference>
-            # or, for the explicit root split, (reference,(ingroup leaves)X)Root.
-            # This HAL can still be used for regrafting at <task.name>, because
-            # halAppendSubtree extracts only the subtree rooted at the merge node.
-            #
-            # For direct-reference and technical-reference tasks, the retained
-            # task-level HAL is still consensus_<task.name>.hal.
-            if task.is_root and root_has_direct_reference(task.node, self.reference):
-                _, holder = self.task_direct_children(task)
-                if holder is not None:
-                    return task.folder / "consensus.hal"
-
-            role, _ = self.reference_role_for_consensus(task)
-            if role == "external":
-                return task.folder / "consensus.hal"
-
-            return task.folder / f"consensus_{task.name}.hal"
+            return task.folder / "consensus.hal"
         return task.folder / f"{task.name}_aln1.hal"
 
     def task_primary_maf(self, task: Task) -> Path:
