@@ -5,18 +5,43 @@
 plan_partially_resolved_cactus.py
 
 A readable planner that:
-1. reads a rooted Newick tree, including rooted partially resolved trees and rooted star trees,
-2. reroots it so that `reference` is the outgroup at the top,
+1. reads a rooted / meaningfully rooted Newick tree,
+2. conditionally keeps or reroots the input tree according to the reference rule,
 3. auto-names unnamed internal nodes,
 4. detects hierarchical unresolved regions,
 5. creates nested folders + `*_aln*.txt`,
 6. writes an `instruction.txt` that lists the Cactus commands in dependency order.
 
+Important conventions
+---------------------
+- Rerooting rule:
+    * if the input tree is fully binary, keep the input rooting unchanged;
+    * else, if the reference is already a direct child of the input top root,
+      keep the input rooting unchanged;
+    * otherwise, reroot the tree so that the reference becomes the top-level outgroup.
+- The root is treated as the final alignment level, but it is not handled as an ordinary
+  non-root internal vertex when deciding biological sub-tasks.
+- At the top root, if the planned tree has the form (reference, X) and X is an
+  internal node, X itself is not materialized as a separate task. X.children enter
+  the root-level alignment directly, and X.name can still be preserved as the
+  ingroup-side top label in generated guide trees.
+- For non-root internal nodes:
+    * exactly two direct children -> fixed single-run task
+    * more than two direct children -> consensus task
+- Fixed tasks do not add the reference unless the reference is already one of their true
+  direct descendants in the fixed tree.
+- Consensus tasks always include the global reference as an outgroup for
+  reference-coordinate consensus extraction.
+- RunPipelineUseThis.sh is called with --ifRefNonOutgroup 1 for every consensus
+  task. The pipeline therefore emits one nested HAL of the form
+  (reference,(ingroup)Anc_name_ofIngroup)Anc_name; the ingroup ancestor remains
+  the task-level FASTA used by higher levels.
+
 Notes
 -----
-- Consensus tasks with exactly 3 ingroup units enumerate all 3 binary topologies.
-- Consensus tasks with >3 ingroup units call an external guide-tree generator:
-      generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py
+- Consensus tasks with exactly 3 sampled elements enumerate all 3 binary topologies internally.
+- Consensus tasks with >3 sampled elements call an external guide-tree generator:
+      generate_random_guidetrees_2models_2modes_finalver.py
 - The consensus-extraction / ancestor-inference step is written as a real
   RunPipelineUseThis.sh command in instruction.txt.
 
@@ -39,8 +64,12 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
+
+# =============================================================================
+# 0. Tree data structure and Newick utilities
+# =============================================================================
 
 @dataclass
 class Node:
@@ -105,6 +134,7 @@ def to_newick(node: Node) -> str:
         return node.name or ""
     return "(" + ",".join(to_newick(c) for c in node.children) + ")" + (node.name or "")
 
+
 def collapse_unary_nodes(node: Node) -> Node:
     """
     Recursively remove redundant unary internal nodes.
@@ -122,7 +152,6 @@ def collapse_unary_nodes(node: Node) -> Node:
         new_node = new_node.children[0]
 
     return new_node
-
 
 
 def _ascii_tree_lines(node: Node, reference: str, prefix: str = "", is_last: bool = True) -> List[str]:
@@ -163,7 +192,22 @@ def find_leaf(root: Node, leaf_name: str) -> Node:
     return found[0]
 
 
+
 def reroot_at_reference(root: Node, reference: str) -> Node:
+    """
+    Reroot a tree so that the reference leaf is the top-level outgroup.
+
+    The returned root has the form:
+
+        (reference, X)<old_root_name_or_auto_root>
+
+    where X is the non-reference side.  If the reference was already attached
+    directly to a multifurcating root, the non-reference children are wrapped
+    into a new unnamed ingroup holder.  That holder is auto-named later.  This
+    deliberately produces the top-level (reference, X) structure expected by
+    the planner, while the root-level task will still use X.children directly
+    and will not materialize X as a separate task.
+    """
     root = root.clone()
     ref_leaf = find_leaf(root, reference)
 
@@ -188,38 +232,57 @@ def reroot_at_reference(root: Node, reference: str) -> Node:
     ref_neighbors = adj[ref_id]
     if len(ref_neighbors) != 1:
         raise ValueError(f"Reference leaf {reference!r} should have exactly one neighbor")
+
+    old_root_id = id(root)
     ingroup_neighbor = ref_neighbors[0]
-    root_id = id(root)
 
     def rebuild(current_id: int, parent_id: int) -> Node:
         current = id_to_node[current_id]
         downstream = [x for x in adj[current_id] if x != parent_id]
         if not downstream:
             return Node(name=current.name, children=[])
-        new_children = [rebuild(nb, current_id) for nb in downstream]
-        return Node(name=current.name, children=new_children)
+        return Node(
+            name=current.name,
+            children=[rebuild(nb, current_id) for nb in downstream],
+        )
 
-    # Special case: if the reference is already attached directly to the
-    # original top root, keep the remaining top-level ingroup children
-    # directly under the new root instead of wrapping them into one extra
-    # redundant internal node. This preserves totally star trees and
-    # one-layer unresolved ingroups as a single top-level consensus task.
-    if ingroup_neighbor == root_id:
-        new_children: List[Node] = [Node(name=reference, children=[])]
+    # If the reference is already a direct child of the original top root,
+    # avoid duplicating the old root name on both the new outer root and the
+    # ingroup holder.  The holder is left unnamed and auto-named later.
+    if ingroup_neighbor == old_root_id:
+        ingroup_children: List[Node] = []
         for c in root.children:
             if c.is_leaf() and c.name == reference:
                 continue
-            new_children.append(rebuild(id(c), root_id))
-        return Node(name=root.name, children=new_children)
+            ingroup_children.append(rebuild(id(c), old_root_id))
 
-    new_root = Node(
+        if len(ingroup_children) == 1:
+            ingroup_side = ingroup_children[0]
+        else:
+            ingroup_side = Node(name=None, children=ingroup_children)
+
+        return Node(
+            name=root.name,
+            children=[Node(name=reference, children=[]), ingroup_side],
+        )
+
+    return Node(
         name=root.name,
         children=[
             Node(name=reference, children=[]),
             rebuild(ingroup_neighbor, ref_id),
         ],
     )
-    return new_root
+
+
+def node_contains_leaf(node: Node, leaf_name: str) -> bool:
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n.is_leaf() and n.name == leaf_name:
+            return True
+        stack.extend(n.children)
+    return False
 
 
 def validate_existing_node_names(root: Node) -> None:
@@ -282,12 +345,12 @@ def auto_name_internal_nodes(root: Node) -> None:
                 return candidate
 
     def next_root_name() -> str:
-        if "Anc_root" not in used_names:
-            used_names.add("Anc_root")
-            return "Anc_root"
+        if "Root" not in used_names:
+            used_names.add("Root")
+            return "Root"
         suffix = 1
         while True:
-            candidate = f"Anc_root_{suffix}"
+            candidate = f"Root_{suffix}"
             suffix += 1
             if candidate not in used_names:
                 used_names.add(candidate)
@@ -306,6 +369,10 @@ def auto_name_internal_nodes(root: Node) -> None:
 
     postorder(root, True)
 
+
+# =============================================================================
+# 1. Input path file
+# =============================================================================
 
 def read_taxon_paths(path_file: Path) -> Dict[str, str]:
     mapping: Dict[str, str] = {}
@@ -326,58 +393,144 @@ def read_taxon_paths(path_file: Path) -> Dict[str, str]:
     return mapping
 
 
-def effective_units(node: Node, reference: str, is_root: bool) -> Tuple[List[Node], Optional[Node]]:
+# =============================================================================
+# 2. Task-level tree helpers
+# =============================================================================
+
+def root_has_direct_reference(root: Node, reference: str) -> bool:
+    return any(c.is_leaf() and c.name == reference for c in root.children)
+
+
+def is_fully_binary_tree(root: Node) -> bool:
+    """
+    Return True only when every internal node has exactly two children.
+
+    The check is applied after collapsing unary nodes in main(), so it treats
+    the input as a conventional rooted binary tree whenever all remaining
+    internal vertices are bifurcating.
+    """
+    if root.is_leaf():
+        return True
+    if len(root.children) != 2:
+        return False
+    return all(is_fully_binary_tree(c) for c in root.children)
+
+
+def direct_alignment_children(node: Node, reference: str, is_root: bool) -> Tuple[List[Node], Optional[Node]]:
+    """
+    Return the direct children that define the current alignment decision.
+
+    For ordinary non-root nodes, these are simply node.children.
+
+    After the conditional rerooting step, at the top root
+    there are two distinct reference cases:
+
+    1. Explicit root split: (reference, X)Root, where X is a single internal
+       holder.  In this case the reference is treated as an external top-level
+       reference/outgroup, X is not materialized as a separate task, and
+       X.children are used for the root-level decision.
+
+    2. Root polytomy with reference as one direct child:
+       (reference, A, B, ...)Root.  In this case the reference is a true direct
+       alignment child and participates in the root-level consensus sampling.
+       Therefore node.children, including the reference, are used directly.
+
+    Example:
+        (GALGA,CATAU,(CHLUN,(COLLI,MESUN)))Root
+
+    with GALGA as reference is a 3-way root-level consensus task, because the
+    direct alignment children are GALGA, CATAU, and the internal CHLUN/COLLI/MESUN
+    side.
+    """
     if is_root:
+        ref_children = [c for c in node.children if c.is_leaf() and c.name == reference]
         non_ref = [c for c in node.children if not (c.is_leaf() and c.name == reference)]
-        if len(non_ref) == 1 and not non_ref[0].is_leaf():
+
+        # Only the explicit binary root split treats the reference as external
+        # and flattens the single ingroup holder.
+        if len(ref_children) == 1 and len(non_ref) == 1 and not non_ref[0].is_leaf():
             return non_ref[0].children, non_ref[0]
-        return non_ref, None
+
+        # In a root polytomy, the reference remains a true direct child.
+        return node.children, None
+
     return node.children, None
 
-
 def is_consensus_target(node: Node, reference: str, is_root: bool) -> bool:
-    units, _ = effective_units(node, reference, is_root)
-    return len(units) > 2
+    children, _ = direct_alignment_children(node, reference, is_root)
+    return len(children) > 2
 
 
-def strip_reference_if_present(tree: Node, reference: str) -> Node:
-    stack = [tree]
-    has_reference = False
-    while stack:
-        n = stack.pop()
-        if n.is_leaf() and n.name == reference:
-            has_reference = True
-            break
-        stack.extend(n.children)
-
-    if not has_reference:
-        return tree.clone()
-
-    rerooted = reroot_at_reference(tree, reference)
-    non_ref = [c for c in rerooted.children if not (c.is_leaf() and c.name == reference)]
-    if len(non_ref) != 1:
-        raise ValueError("After rerooting generated tree at reference, expected exactly one ingroup side")
-    return collapse_unary_nodes(non_ref[0])
-
-
-def relabel_ingroup_tree(root: Node, top_name: Optional[str], internal_prefix: str) -> Node:
+def relabel_tree_internal_nodes(
+    root: Node,
+    top_name: Optional[str],
+    internal_prefix: str,
+    protected_names: Optional[Set[str]] = None,
+) -> Node:
     root = root.clone()
+    protected_names = protected_names or set()
     counter = 1
 
-    def postorder(n: Node, is_top: bool = False) -> None:
+    def next_label() -> str:
         nonlocal counter
+        while True:
+            label = f"{internal_prefix}_{counter}"
+            counter += 1
+            if label not in protected_names:
+                return label
+
+    def postorder(n: Node, is_top: bool = False) -> None:
         for c in n.children:
             postorder(c, False)
         if not n.is_leaf():
+            if n.name in protected_names:
+                return
             if is_top and top_name is not None:
                 n.name = top_name
             else:
-                n.name = f"{internal_prefix}_{counter}"
-                counter += 1
+                n.name = next_label()
 
     postorder(root, True)
     return root
 
+def relabel_external_outgroup_tree(
+    full_root: Node,
+    reference: str,
+    outer_root_name: str,
+    ingroup_top_name: Optional[str],
+    internal_prefix: str,
+) -> Node:
+    """
+    Relabel a generated tree of the form (reference, ingroup_subtree).
+    The outer root receives outer_root_name. The non-reference child receives
+    ingroup_top_name if provided; otherwise it is named by internal_prefix.
+    """
+    full_root = full_root.clone()
+    if full_root.is_leaf():
+        raise ValueError("External-outgroup guide tree unexpectedly has a leaf root.")
+
+    ref_children = [c for c in full_root.children if c.is_leaf() and c.name == reference]
+    non_ref_children = [c for c in full_root.children if not (c.is_leaf() and c.name == reference)]
+    if len(ref_children) != 1 or len(non_ref_children) != 1:
+        raise ValueError(
+            "Expected generated external-outgroup tree to have one reference child "
+            "and one non-reference ingroup child."
+        )
+
+    full_root.name = outer_root_name
+    relabeled_ingroup = relabel_tree_internal_nodes(
+        non_ref_children[0], top_name=ingroup_top_name, internal_prefix=internal_prefix
+    )
+    full_root.children = [ref_children[0].clone(), relabeled_ingroup]
+    return full_root
+
+
+Shape = Union[str, Tuple["Shape", "Shape"]]
+
+
+# =============================================================================
+# 3. Parameters and task records
+# =============================================================================
 
 @dataclass
 class GuideParams:
@@ -391,8 +544,10 @@ class GuideParams:
     seed: Optional[int] = None
     python_bin: str = sys.executable
 
-    def command_for(self, taxa: List[str], outgroup: str) -> List[str]:
-        cmd = [self.python_bin, str(self.generator), "--taxa", *taxa, "--outgroup", outgroup]
+    def command_for(self, taxa: List[str], outgroup: Optional[str] = None) -> List[str]:
+        cmd = [self.python_bin, str(self.generator), "--taxa", *taxa]
+        if outgroup is not None:
+            cmd += ["--outgroup", outgroup]
         if self.num_trees is not None:
             cmd += ["--num_trees", str(self.num_trees)]
         if self.model is not None:
@@ -441,6 +596,10 @@ class Task:
         return hash((self.name, str(self.folder)))
 
 
+# =============================================================================
+# 4. Planner
+# =============================================================================
+
 class Planner:
     def __init__(
         self,
@@ -460,6 +619,10 @@ class Planner:
         self.tasks_by_name: Dict[str, Task] = {}
         self.root_task: Optional[Task] = None
 
+    # -------------------------------------------------------------------------
+    # Basic paths
+    # -------------------------------------------------------------------------
+
     def task_folder(self, node: Node, parent_task: Optional[Task]) -> Path:
         if parent_task is None:
             return self.outdir / node.name
@@ -470,6 +633,102 @@ class Planner:
 
     def task_genome_txt(self, task: Task) -> Path:
         return task.folder / f"{task.name}.genome.txt"
+
+    def task_primary_hal(self, task: Task) -> Path:
+        if task.kind == "consensus":
+            # RunPipelineUseThis.sh is called with --pre <task.folder>/consensus.
+            #
+            # For reference-outgroup consensus tasks, the updated pipeline now
+            # retains one nested HAL named consensus.hal:
+            #     (reference,(ingroup leaves)<task.name>)<task.name>_<reference>
+            # or, for the explicit root split, (reference,(ingroup leaves)X)Root.
+            # This HAL can still be used for regrafting at <task.name>, because
+            # halAppendSubtree extracts only the subtree rooted at the merge node.
+            #
+            # For direct-reference and technical-reference tasks, the retained
+            # task-level HAL is still consensus_<task.name>.hal.
+            if task.is_root and root_has_direct_reference(task.node, self.reference):
+                _, holder = self.task_direct_children(task)
+                if holder is not None:
+                    return task.folder / "consensus.hal"
+
+            role, _ = self.reference_role_for_consensus(task)
+            if role == "external":
+                return task.folder / "consensus.hal"
+
+            return task.folder / f"consensus_{task.name}.hal"
+        return task.folder / f"{task.name}_aln1.hal"
+
+    def task_primary_maf(self, task: Task) -> Path:
+        if task.kind == "consensus":
+            return task.folder / "consensus.maf"
+        return task.folder / f"{task.name}_aln1.maf"
+
+    def task_primary_fasta(self, task: Task) -> Path:
+        if task.kind == "consensus":
+            return task.folder / "consensus.fasta"
+        return task.output_fa if task.output_fa is not None else (task.folder / f"{task.name}.fa")
+
+    def task_primary_stem(self, task: Task) -> str:
+        return self.task_primary_hal(task).stem
+
+    def root_alltaxa_script(self) -> Path:
+        return self.outdir / "finalization.sh"
+
+    def bundled_hal_append_subtree(self) -> Path:
+        return self.pipeline_params.pipeline.resolve().parent / "tool_used" / "bin" / "halAppendSubtree"
+
+    def root_alltaxa_hal(self) -> Path:
+        if self.root_task is None:
+            raise RuntimeError("Root task has not been planned yet")
+        return self.root_task.folder / "FinalResultAlignment.hal"
+
+    def root_alltaxa_maf(self) -> Path:
+        if self.root_task is None:
+            raise RuntimeError("Root task has not been planned yet")
+        return self.root_task.folder / "FinalResultAlignment.maf"
+
+    def root_alltaxa_fasta(self) -> Path:
+        if self.root_task is None:
+            raise RuntimeError("Root task has not been planned yet")
+        return self.root_task.folder / "FinalResultAlignment.fasta"
+
+    def final_output_dir(self) -> Path:
+        return self.outdir / "final_output"
+
+    def final_output_hal(self) -> Path:
+        if self.root_task is None:
+            raise RuntimeError("Root task has not been planned yet")
+        return self.final_output_dir() / self.root_alltaxa_hal().name
+
+    def final_output_maf(self) -> Path:
+        if self.root_task is None:
+            raise RuntimeError("Root task has not been planned yet")
+        return self.final_output_dir() / self.root_alltaxa_maf().name
+
+    def final_output_fasta(self) -> Path:
+        if self.root_task is None:
+            raise RuntimeError("Root task has not been planned yet")
+        return self.final_output_dir() / self.root_alltaxa_fasta().name
+
+    def final_output_ancestor_fasta(self) -> Path:
+        if self.root_task is None:
+            raise RuntimeError("Root task has not been planned yet")
+        return self.final_output_dir() / self.root_task.output_fa.name
+
+    def render_run_path(self, p: Path) -> str:
+        p = p.resolve()
+        try:
+            rel = p.relative_to(self.outdir)
+        except ValueError:
+            return shlex.quote(str(p))
+        if str(rel) == ".":
+            return "${RUN_PATH}"
+        return f"${{RUN_PATH}}/{rel.as_posix()}"
+
+    # -------------------------------------------------------------------------
+    # Task creation and dependency planning
+    # -------------------------------------------------------------------------
 
     def create_task(self, node: Node, parent_task: Optional[Task], is_root: bool, kind: str) -> Task:
         if node.name in self.tasks_by_name:
@@ -494,12 +753,44 @@ class Planner:
             parent_task.dependencies.append(t)
         return t
 
+    def task_direct_children(self, task: Task) -> Tuple[List[Node], Optional[Node]]:
+        return direct_alignment_children(task.node, self.reference, task.is_root)
+
+    def reference_is_direct_alignment_child(self, task: Task) -> bool:
+        children, _ = self.task_direct_children(task)
+        return any(c.is_leaf() and c.name == self.reference for c in children)
+
+    def child_containing_reference(self, task: Task) -> Optional[Node]:
+        children, _ = self.task_direct_children(task)
+        for c in children:
+            if node_contains_leaf(c, self.reference):
+                return c
+        return None
+
+    def reference_role_for_consensus(self, task: Task) -> Tuple[str, Optional[Node]]:
+        """
+        Return one of:
+            direct   : reference is a true direct alignment child of this task.
+            nested   : reference is inside one direct child of this task.
+            external : reference is outside this task and is added only as an external reference.
+        """
+        if self.reference_is_direct_alignment_child(task):
+            return "direct", None
+        child = self.child_containing_reference(task)
+        if child is not None:
+            return "nested", child
+        return "external", None
+
+    def consensus_reference_is_technical_only(self, task: Task) -> bool:
+        return task.kind == "consensus" and not self.reference_is_direct_alignment_child(task)
+
     def ensure_task_for_materialized_node(self, node: Node, parent_task: Task, is_root: bool = False) -> Task:
         kind = "consensus" if is_consensus_target(node, self.reference, is_root) else "fixed"
         task = self.create_task(node, parent_task, is_root, kind)
+
         if kind == "consensus":
-            units, _ = effective_units(node, self.reference, is_root)
-            for u in units:
+            children, _ = direct_alignment_children(node, self.reference, is_root)
+            for u in children:
                 if not u.is_leaf():
                     self.ensure_task_for_materialized_node(u, task, False)
         else:
@@ -523,8 +814,8 @@ class Planner:
         self.root_task = self.create_task(self.root, None, True, root_kind)
 
         if root_kind == "consensus":
-            units, _ = effective_units(self.root, self.reference, True)
-            for u in units:
+            children, _ = direct_alignment_children(self.root, self.reference, True)
+            for u in children:
                 if not u.is_leaf():
                     self.ensure_task_for_materialized_node(u, self.root_task, False)
         else:
@@ -532,30 +823,53 @@ class Planner:
 
         return self.root_task
 
+    # -------------------------------------------------------------------------
+    # Guide-tree strings
+    # -------------------------------------------------------------------------
+
     def unit_label(self, unit: Node) -> str:
+        if not unit.name:
+            raise ValueError("Encountered unnamed direct alignment child after auto-naming.")
         return unit.name
 
-    def fixed_tree_string(self, task: Task) -> str:
+    def rec_fixed_subtree(self, n: Node, task: Task) -> str:
         materialized = set(task.descendant_consensus_names)
+        if n.is_leaf():
+            return n.name
+        if n.name in materialized and n.name != task.name:
+            return n.name
+        inside = ",".join(self.rec_fixed_subtree(c, task) for c in n.children)
+        return f"({inside}){n.name}"
 
-        def rec(n: Node) -> str:
-            if n.is_leaf():
-                return n.name
-            if n.name in materialized and n.name != task.name:
-                return n.name
-            inside = ",".join(rec(c) for c in n.children)
-            return f"({inside}){n.name}"
+    def fixed_tree_string(self, task: Task) -> str:
+        # Root special case only for an explicit root split: (reference, X)Root,
+        # where X is an internal holder. In that case X is not materialized as a
+        # separate task, but the root-level fixed tree keeps reference outside
+        # the holder-side subtree.
+        if task.is_root and self.reference_is_direct_alignment_child(task):
+            children, holder = self.task_direct_children(task)
+            if holder is not None:
+                if len(children) == 1:
+                    return f"({self.reference},{self.rec_fixed_subtree(children[0], task)}){task.name};"
+                if len(children) == 2:
+                    left = self.rec_fixed_subtree(children[0], task)
+                    right = self.rec_fixed_subtree(children[1], task)
+                    ingroup_name = holder.name if holder.name else f"{task.name}_ingroup"
+                    return f"({self.reference},({left},{right}){ingroup_name}){task.name};"
 
-        return rec(task.node) + ";"
+        return self.rec_fixed_subtree(task.node, task) + ";"
 
-    def topology_shapes_for_three(self, labels: List[str]) -> List[Tuple]:
+
+    def topology_shapes_for_three(self, labels: List[str]) -> List[Shape]:
+        if len(labels) != 3:
+            raise ValueError("topology_shapes_for_three requires exactly three labels")
         a, b, c = labels
         return [((a, b), c), ((a, c), b), ((b, c), a)]
 
-    def build_named_ingroup_from_shape(self, shape, top_name: Optional[str], internal_prefix: str) -> str:
+    def build_named_tree_from_shape(self, shape: Shape, top_name: Optional[str], internal_prefix: str) -> str:
         counter = 1
 
-        def rec(x, is_top: bool = False) -> str:
+        def rec(x: Shape, is_top: bool = False) -> str:
             nonlocal counter
             if isinstance(x, str):
                 return x
@@ -570,8 +884,7 @@ class Planner:
 
         return rec(shape, True)
 
-    def generated_ingroup_trees(self, labels: List[str], top_name: Optional[str], internal_prefix: str) -> List[str]:
-        cmd = self.guide_params.command_for(labels, self.reference)
+    def parse_generator_newicks(self, cmd: List[str]) -> List[str]:
         try:
             res = subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
@@ -597,47 +910,118 @@ class Planner:
                 "Guide-tree generator returned no Newick trees. "
                 f"Command was: {' '.join(shlex.quote(x) for x in cmd)}"
             )
-
+        return newick_lines
+    
+    def generated_trees_no_outgroup(
+        self,
+        labels: List[str],
+        top_name: str,
+        internal_prefix: str,
+        protected_names: Optional[Set[str]] = None,
+    ) -> List[str]:
+        cmd = self.guide_params.command_for(labels, outgroup=None)
+        newick_lines = self.parse_generator_newicks(cmd)
         out: List[str] = []
         for s in newick_lines:
             parsed = parse_newick(s)
-            ingroup_only = strip_reference_if_present(parsed, self.reference)
-            relabeled = relabel_ingroup_tree(ingroup_only, top_name=top_name, internal_prefix=internal_prefix)
+            relabeled = relabel_tree_internal_nodes(
+                parsed,
+                top_name=top_name,
+                internal_prefix=internal_prefix,
+                protected_names=protected_names,
+            )
+            out.append(to_newick(relabeled))
+        return out    
+
+    def generated_trees_with_external_outgroup(
+        self,
+        labels: List[str],
+        outgroup: str,
+        outer_root_name: str,
+        ingroup_top_name: Optional[str],
+        internal_prefix: str,
+    ) -> List[str]:
+        cmd = self.guide_params.command_for(labels, outgroup=outgroup)
+        newick_lines = self.parse_generator_newicks(cmd)
+        out: List[str] = []
+        for s in newick_lines:
+            parsed = parse_newick(s)
+            relabeled = relabel_external_outgroup_tree(
+                parsed,
+                reference=outgroup,
+                outer_root_name=outer_root_name,
+                ingroup_top_name=ingroup_top_name,
+                internal_prefix=internal_prefix,
+            )
             out.append(to_newick(relabeled))
         return out
 
     def consensus_tree_strings(self, task: Task) -> List[str]:
-        units, holder = effective_units(task.node, self.reference, task.is_root)
-        labels = [self.unit_label(u) for u in units]
+        children, holder = self.task_direct_children(task)
+        labels = [self.unit_label(u) for u in children]
+        role, _ = self.reference_role_for_consensus(task)
 
-        # Naming rule:
-        # - top-level partially resolved case with a single holder:
-        #   preserve that holder name as the ingroup top.
-        # - all other cases:
-        #   number every ingroup internal node, including the ingroup top,
-        #   so we do NOT create redundant names like
-        #       (...)Anc_in21)Anc_in21_GALGA
-        #   or
-        #       (...)Anc_root)Anc_root
+        # Case 1: reference is a true direct child of the current polytomy.
+        # It must participate in guide-tree sampling and must not be forced to
+        # the external outgroup position.
+        if role == "direct":
+            top_name = task.name
+            internal_prefix = task.name
+
+            if len(labels) == 3:
+                return [
+                    self.build_named_tree_from_shape(
+                        shape,
+                        top_name=top_name,
+                        internal_prefix=internal_prefix,
+                    ) + ";"
+                    for shape in self.topology_shapes_for_three(labels)
+                ]
+
+            return [s + ";" for s in self.generated_trees_no_outgroup(
+                labels=labels,
+                top_name=top_name,
+                internal_prefix=internal_prefix,
+                protected_names={self.reference},
+            )]
+
+        # Case 2: explicit root split or ordinary external-reference consensus.
+        # The reference is a technical coordinate anchor / external outgroup.
+        # It is added outside the sampled ingroup tree.
         if task.is_root and holder is not None and holder.name:
             ingroup_top_name = holder.name
             internal_prefix = holder.name
+        elif task.is_root:
+            ingroup_top_name = f"{task.name}_ingroup"
+            internal_prefix = ingroup_top_name
         else:
-            ingroup_top_name = None
+            ingroup_top_name = task.name
             internal_prefix = task.name
 
         outer_root_name = task.name if task.is_root else f"{task.name}_{self.reference}"
 
         if len(labels) == 3:
-            shapes = self.topology_shapes_for_three(labels)
             ingroups = [
-                self.build_named_ingroup_from_shape(shape, top_name=ingroup_top_name, internal_prefix=internal_prefix)
-                for shape in shapes
+                self.build_named_tree_from_shape(
+                    shape,
+                    top_name=ingroup_top_name,
+                    internal_prefix=internal_prefix,
+                )
+                for shape in self.topology_shapes_for_three(labels)
             ]
-        else:
-            ingroups = self.generated_ingroup_trees(labels, top_name=ingroup_top_name, internal_prefix=internal_prefix)
+            return [f"({self.reference},{ingroup}){outer_root_name};" for ingroup in ingroups]
 
-        return [f"({self.reference},{ingroup}){outer_root_name};" for ingroup in ingroups]
+        return [s + ";" for s in self.generated_trees_with_external_outgroup(
+            labels=labels,
+            outgroup=self.reference,
+            outer_root_name=outer_root_name,
+            ingroup_top_name=ingroup_top_name,
+            internal_prefix=internal_prefix,
+        )]
+
+    # -------------------------------------------------------------------------
+    # Alignment text files
+    # -------------------------------------------------------------------------
 
     def leaf_paths_for_task(self, task: Task) -> Dict[str, str]:
         mapping: Dict[str, str] = {}
@@ -650,13 +1034,15 @@ class Planner:
                 mapping[label] = str(dep_task.output_fa.resolve())
             else:
                 raise ValueError(
-                    f"Cannot find path for label {label!r}. It is neither a taxon in the path file nor a planned ancestor task."
+                    f"Cannot find path for label {label!r}. It is neither a taxon in the path file "
+                    "nor a planned ancestor task."
                 )
 
         if task.kind == "consensus":
-            units, _ = effective_units(task.node, self.reference, task.is_root)
+            # Consensus extraction always needs the reference as a coordinate anchor.
             add_taxon_or_ancestor(self.reference)
-            for u in units:
+            children, _ = self.task_direct_children(task)
+            for u in children:
                 add_taxon_or_ancestor(self.unit_label(u))
         else:
             materialized = set(task.descendant_consensus_names)
@@ -694,6 +1080,14 @@ class Planner:
             with open(task.genome_txt, "w", encoding="utf-8") as fw:
                 for label in sorted(leaf_path_map):
                     fw.write(f"{label} {leaf_path_map[label]}\n")
+
+    def write_all_task_files(self) -> None:
+        for task in self.topologically_sorted_tasks():
+            self.write_task_files(task)
+
+    # -------------------------------------------------------------------------
+    # Dependency sorting
+    # -------------------------------------------------------------------------
 
     def task_dependency_graph(self) -> Dict[str, Set[str]]:
         graph: Dict[str, Set[str]] = {}
@@ -738,69 +1132,9 @@ class Planner:
             out.extend(level)
         return out
 
-    def write_all_task_files(self) -> None:
-        for task in self.topologically_sorted_tasks():
-            self.write_task_files(task)
-
-    def task_primary_hal(self, task: Task) -> Path:
-        if task.kind == "consensus":
-            return task.folder / f"{task.name}_consensus_{task.name}.hal"
-        return task.folder / f"{task.name}_aln1.hal"
-
-    def task_primary_maf(self, task: Task) -> Path:
-        if task.kind == "consensus":
-            return task.folder / f"{task.name}_consensus.maf"
-        return task.folder / f"{task.name}_aln1.maf"
-
-    def task_primary_fasta(self, task: Task) -> Path:
-        if task.kind == "consensus":
-            return task.folder / f"{task.name}_consensus.fasta"
-        return task.output_fa if task.output_fa is not None else (task.folder / f"{task.name}.fa")
-
-    def task_primary_stem(self, task: Task) -> str:
-        return self.task_primary_hal(task).stem
-
-    def root_alltaxa_script(self) -> Path:
-        return self.outdir / "consensus_regraft.sh"
-
-    def bundled_hal_append_subtree(self) -> Path:
-        return self.pipeline_params.pipeline.resolve().parent / "tool_used" / "bin" / "halAppendSubtree"
-
-    def bundled_maf2hal(self) -> Path:
-        return self.pipeline_params.pipeline.resolve().parent / "tool_used" / "bin" / "maf2hal"
-
-    def root_alltaxa_hal(self) -> Path:
-        if self.root_task is None:
-            raise RuntimeError("Root task has not been planned yet")
-        return self.root_task.folder / f"{self.task_primary_stem(self.root_task)}.allTaxa.hal"
-
-    def root_alltaxa_maf(self) -> Path:
-        if self.root_task is None:
-            raise RuntimeError("Root task has not been planned yet")
-        return self.root_task.folder / f"{self.task_primary_stem(self.root_task)}.allTaxa.maf"
-
-    def root_alltaxa_fasta(self) -> Path:
-        if self.root_task is None:
-            raise RuntimeError("Root task has not been planned yet")
-        return self.root_task.folder / f"{self.task_primary_stem(self.root_task)}.allTaxa.fasta"
-
-    def final_output_dir(self) -> Path:
-        return self.outdir / "final_output"
-
-    def final_output_maf(self) -> Path:
-        if self.root_task is None:
-            raise RuntimeError("Root task has not been planned yet")
-        return self.final_output_dir() / self.root_alltaxa_maf().name
-
-    def final_output_fasta(self) -> Path:
-        if self.root_task is None:
-            raise RuntimeError("Root task has not been planned yet")
-        return self.final_output_dir() / self.root_alltaxa_fasta().name
-
-    def final_output_ancestor_fasta(self) -> Path:
-        if self.root_task is None:
-            raise RuntimeError("Root task has not been planned yet")
-        return self.final_output_dir() / self.root_task.output_fa.name
+    # -------------------------------------------------------------------------
+    # Regrafting and final output
+    # -------------------------------------------------------------------------
 
     def all_leaf_taxa(self) -> List[str]:
         taxa: List[str] = []
@@ -832,8 +1166,8 @@ class Planner:
                     out.append(deeper)
 
         if task.kind == "consensus":
-            units, _ = effective_units(task.node, self.reference, task.is_root)
-            for u in units:
+            children, _ = self.task_direct_children(task)
+            for u in children:
                 if not u.is_leaf() and u.name in self.tasks_by_name:
                     append_task(self.tasks_by_name[u.name])
         else:
@@ -856,12 +1190,6 @@ class Planner:
             return []
         return self.regraft_order_within_task(self.root_task)
 
-    def regraft_cmd(self, destination_hal: Path, task: Task) -> str:
-        return (
-            f"halAppendSubtree {self.render_run_path(destination_hal)} "
-            f"{self.render_run_path(self.task_primary_hal(task))} {shlex.quote(task.name)} {shlex.quote(task.name)} --merge"
-        )
-
     def regraft_cmd_for_script(self, destination_hal: Path, task: Task) -> str:
         return (
             f"\"$patched_halAppendSubtree\" {self.render_run_path(destination_hal)} "
@@ -875,7 +1203,8 @@ class Planner:
         return (
             f"cactus-hal2maf --dupeMode single --chunkSize 500000 "
             f"--refGenome {shlex.quote(self.reference)} --noAncestors "
-            f"{self.render_run_path(jobstore)} {self.render_run_path(self.root_alltaxa_hal())} {self.render_run_path(self.root_alltaxa_maf())}"
+            f"{self.render_run_path(jobstore)} {self.render_run_path(self.root_alltaxa_hal())} "
+            f"{self.render_run_path(self.root_alltaxa_maf())}"
         )
 
     def root_alltaxa_fasta_cmd(self) -> str:
@@ -884,57 +1213,58 @@ class Planner:
         script = self.render_run_path(self.pipeline_params.maf_to_concat_fasta)
         return (
             f"taxa_args=({taxa_args})\n"
-            f"python {script} \"${{taxa_args[@]}}\" < {self.render_run_path(self.root_alltaxa_maf())} > {self.render_run_path(self.root_alltaxa_fasta())}"
+            f"python {script} \"${{taxa_args[@]}}\" < {self.render_run_path(self.root_alltaxa_maf())} > "
+            f"{self.render_run_path(self.root_alltaxa_fasta())}"
         )
 
-    def write_consensus_regraft_script(self) -> Optional[Path]:
+    def write_finalization_script(self) -> Optional[Path]:
+        """
+        Write the finalization script.
+
+        This script is needed even when there are no descendant HALs to regraft,
+        because a fully fixed/binary root alignment still needs to be exported
+        from HAL to the final MAF and concatenated FASTA outputs.
+        """
         regraft_tasks = self.final_regraft_tasks()
         script_path = self.root_alltaxa_script()
 
-        if not regraft_tasks or self.root_task is None:
+        if self.root_task is None:
             if script_path.exists():
                 script_path.unlink()
             return None
 
         bundled_hal_append_subtree = self.bundled_hal_append_subtree().resolve()
-        bundled_maf2hal = self.bundled_maf2hal().resolve()
 
         with open(script_path, "w", encoding="utf-8") as fw:
             fw.write("#!/bin/bash\n")
             fw.write("set -euo pipefail\n\n")
             fw.write("RUN_PATH=" + shlex.quote(str(self.outdir)) + "\n")
-            fw.write("patched_halAppendSubtree=" + shlex.quote(str(bundled_hal_append_subtree)) + "\n")
-            fw.write("patched_maf2hal=" + shlex.quote(str(bundled_maf2hal)) + "\n\n")
-            fw.write('for exe in "$patched_halAppendSubtree" "$patched_maf2hal"; do\n')
-            fw.write('    if [[ ! -f "$exe" ]]; then\n')
-            fw.write('        echo "Error: bundled executable not found: $exe"\n')
-            fw.write("        exit 1\n")
-            fw.write("    fi\n")
-            fw.write('    chmod +x "$exe"\n')
-            fw.write('    if [[ ! -x "$exe" ]]; then\n')
-            fw.write('        echo "Error: bundled executable is still not executable: $exe"\n')
-            fw.write("        exit 1\n")
-            fw.write("    fi\n")
-            fw.write("done\n\n")
+
+            if regraft_tasks:
+                fw.write("patched_halAppendSubtree=" + shlex.quote(str(bundled_hal_append_subtree)) + "\n\n")
+                fw.write('for exe in "$patched_halAppendSubtree"; do\n')
+                fw.write('    if [[ ! -f "$exe" ]]; then\n')
+                fw.write('        echo "Error: bundled executable not found: $exe"\n')
+                fw.write("        exit 1\n")
+                fw.write("    fi\n")
+                fw.write('    chmod +x "$exe"\n')
+                fw.write('    if [[ ! -x "$exe" ]]; then\n')
+                fw.write('        echo "Error: bundled executable is still not executable: $exe"\n')
+                fw.write("        exit 1\n")
+                fw.write("    fi\n")
+                fw.write("done\n\n")
 
             fw.write(f'root_alltaxa_hal="{self.render_run_path(self.root_alltaxa_hal())}"\n')
-            if self.root_task.kind == "consensus":
-                root_consensus_anc_maf = self.root_task.folder / f"{self.root_task.name}_consensus_{self.root_task.name}.maf"
-                fw.write(f'root_consensus_maf="{self.render_run_path(root_consensus_anc_maf)}"\n')
-                fw.write("target_genomes_csv=$(awk '$1==\"s\"{split($2,a,\".\"); if(!(a[1] in seen)){seen[a[1]]=1; order[++n]=a[1]}} END{for(i=1;i<=n;i++) printf \"%s%s\", order[i], (i<n?\",\":\"\")}' \"$root_consensus_maf\")\n")
-                fw.write(f'"$patched_maf2hal" --refGenome {shlex.quote(self.root_task.name)} --targetGenomes "$target_genomes_csv" "$root_consensus_maf" "$root_alltaxa_hal"\n')
-            else:
-                fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} "$root_alltaxa_hal"\n')
+            fw.write('# Copy the root-level primary HAL to a stable final-working name.\n')
+            fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} "$root_alltaxa_hal"\n')
 
             for task in regraft_tasks:
                 fw.write(self.regraft_cmd_for_script(self.root_alltaxa_hal(), task) + "\n")
+
             fw.write(self.root_alltaxa_hal2maf_cmd() + "\n")
             fw.write(self.root_alltaxa_fasta_cmd() + "\n")
-            if self.root_task.kind == "consensus":
-                fw.write('rm -f "$root_consensus_maf" "$root_alltaxa_hal"\n')
-            else:
-                fw.write('rm -f "$root_alltaxa_hal"\n')
             fw.write(f'mkdir -p {self.render_run_path(self.final_output_dir())}\n')
+            fw.write(f'mv "$root_alltaxa_hal" {self.render_run_path(self.final_output_hal())}\n')
             fw.write(f'mv {self.render_run_path(self.root_alltaxa_maf())} {self.render_run_path(self.final_output_maf())}\n')
             fw.write(f'mv {self.render_run_path(self.root_alltaxa_fasta())} {self.render_run_path(self.final_output_fasta())}\n')
             fw.write(f'mv {self.render_run_path(self.root_task.output_fa)} {self.render_run_path(self.final_output_ancestor_fasta())}\n')
@@ -953,31 +1283,20 @@ class Planner:
             fw.write("############################################################\n")
             return
 
-        regraft_tasks = self.final_regraft_tasks()
+        final_hal = self.final_output_hal().resolve()
+        final_maf = self.final_output_maf().resolve()
+        final_fasta = self.final_output_fasta().resolve()
+        final_ancestor_fasta = self.final_output_ancestor_fasta().resolve()
 
-        if regraft_tasks:
-            final_maf = self.final_output_maf().resolve()
-            final_fasta = self.final_output_fasta().resolve()
-            final_ancestor_fasta = self.final_output_ancestor_fasta().resolve()
-        else:
-            final_maf = self.task_primary_maf(self.root_task).resolve()
-            final_fasta = self.task_primary_fasta(self.root_task).resolve()
-            final_ancestor_fasta = self.root_task.output_fa.resolve()
-
-        fw.write(f"# Final consensus MAF   : {final_maf}\n")
-        fw.write(f"# Final consensus FASTA : {final_fasta}\n")
+        fw.write(f"# Final result alignment in HAL   : {final_hal}\n")
+        fw.write(f"# Final result alignment in MAF   : {final_maf}\n")
+        fw.write(f"# Final result alignment in FASTA : {final_fasta}\n")
         fw.write(f"# Final inferred genome FASTA for {self.root_task.name}: {final_ancestor_fasta}\n")
         fw.write("############################################################\n")
 
-    def render_run_path(self, p: Path) -> str:
-        p = p.resolve()
-        try:
-            rel = p.relative_to(self.outdir)
-        except ValueError:
-            return shlex.quote(str(p))
-        if str(rel) == ".":
-            return "${RUN_PATH}"
-        return f"${{RUN_PATH}}/{rel.as_posix()}"
+    # -------------------------------------------------------------------------
+    # Commands
+    # -------------------------------------------------------------------------
 
     def processed_tree_newick(self) -> str:
         return to_newick(self.root) + ";"
@@ -994,7 +1313,8 @@ class Planner:
             f"{self.render_run_path(jobstore)} {self.render_run_path(aln_txt)} {self.render_run_path(hal)}"
         )
         cmd2 = (
-            f"hal2fasta {self.render_run_path(hal)} {shlex.quote(task.name)} > {self.render_run_path(task.output_fa)}"
+            f"hal2fasta {self.render_run_path(hal)} {shlex.quote(task.name)} > "
+            f"{self.render_run_path(task.output_fa)}"
         )
         return cmd1 + "\n" + cmd2
 
@@ -1015,43 +1335,71 @@ class Planner:
         return cmds
 
     def consensus_pipeline_cmd(self, task: Task) -> str:
-        maf_paths = [self.render_run_path(task.folder / f"{task.name}_aln{i}.maf") for i in range(1, len(task.alignment_files) + 1)]
-        pre = self.render_run_path(task.folder / f"{task.name}_consensus")
+        maf_paths = [
+            self.render_run_path(task.folder / f"{task.name}_aln{i}.maf")
+            for i in range(1, len(task.alignment_files) + 1)
+        ]
+        pre = self.render_run_path(task.folder / "consensus")
         genome_txt = self.render_run_path(task.genome_txt) if task.genome_txt is not None else ""
         pipeline = self.render_run_path(self.pipeline_params.pipeline)
         model_file = self.render_run_path(self.pipeline_params.model_file)
 
-        lines = [
-            f"bash {pipeline} \\",
-            f"  --input {' '.join(maf_paths)} \\",
-            f"  --reference {shlex.quote(self.reference)} \\",
-            f"  --pre {pre} \\",
-            f"  --threads {self.pipeline_params.threads} \\",
-            f"  --common_workers {self.pipeline_params.common_workers} \\",
-            f"  --genome_path {genome_txt} \\",
-            f"  --Anc_name {shlex.quote(task.name)} \\",
-            f"  --ModelFile {model_file}",
+        _, holder = self.task_direct_children(task)
+        role, _ = self.reference_role_for_consensus(task)
+
+        # --ifRefNonOutgroup convention used by RunPipelineUseThis.sh:
+        #   0 : reference is a true direct child of the consensus task and is
+        #       allowed to move among the sampled guide trees.
+        #   1 : reference is an external/top-level outgroup used as the
+        #       coordinate anchor; --Anc_name_ofIngroup names the ingroup
+        #       ancestor used by higher levels.
+        if role == "direct":
+            anc_name_for_pipeline = task.name
+            extra_pipeline_options: List[Tuple[str, str]] = [
+                ("--ifRefNonOutgroup", "0"),
+            ]
+        else:
+            if task.is_root:
+                anc_name_for_pipeline = task.name
+                ingroup_name = holder.name if holder is not None and holder.name else f"{task.name}_ingroup"
+            else:
+                anc_name_for_pipeline = f"{task.name}_{self.reference}"
+                ingroup_name = task.name
+
+            extra_pipeline_options = [
+                ("--ifRefNonOutgroup", "1"),
+                ("--Anc_name_ofIngroup", ingroup_name),
+            ]
+
+        option_lines = [
+            ("--input", " ".join(maf_paths)),
+            ("--reference", shlex.quote(self.reference)),
+            ("--pre", pre),
+            ("--threads", str(self.pipeline_params.threads)),
+            ("--common_workers", str(self.pipeline_params.common_workers)),
+            ("--genome_path", genome_txt),
+            ("--Anc_name", shlex.quote(anc_name_for_pipeline)),
+            ("--ModelFile", model_file),
+            ("--ifDeleteImmdiFiles", "0"),
         ]
+        option_lines.extend(extra_pipeline_options)
 
-        optional_lines: List[str] = []
         if self.pipeline_params.sep_length is not None:
-            optional_lines.append(f"  --sep_length {self.pipeline_params.sep_length}")
+            option_lines.append(("--sep_length", str(self.pipeline_params.sep_length)))
         if self.pipeline_params.chrom_length_threshold is not None:
-            optional_lines.append(f"  --chrom_length_threshold {self.pipeline_params.chrom_length_threshold}")
+            option_lines.append(("--chrom_length_threshold", str(self.pipeline_params.chrom_length_threshold)))
         if self.pipeline_params.global_num is not None:
-            optional_lines.append(f"  --global_num {self.pipeline_params.global_num}")
+            option_lines.append(("--global_num", str(self.pipeline_params.global_num)))
         if self.pipeline_params.separate_workers is not None:
-            optional_lines.append(f"  --separate_workers {self.pipeline_params.separate_workers}")
+            option_lines.append(("--separate_workers", str(self.pipeline_params.separate_workers)))
 
-        if optional_lines:
-            lines[-1] += " " + "\\"
-            for i, opt in enumerate(optional_lines):
-                if i < len(optional_lines) - 1:
-                    lines.append(opt + " " + "\\")
-                else:
-                    lines.append(opt)
+        lines = [f"bash {pipeline} \\"]
+        for i, (opt, val) in enumerate(option_lines):
+            suffix = " \\" if i < len(option_lines) - 1 else ""
+            lines.append(f"  {opt} {val}{suffix}")
 
         return "\n".join(lines)
+
 
     def write_instruction(self) -> Path:
         instruction = self.outdir / "instruction.txt"
@@ -1060,7 +1408,7 @@ class Planner:
         regraft_tasks = self.final_regraft_tasks()
 
         with open(instruction, "w", encoding="utf-8") as fw:
-            fw.write("## Processed tree used for planning (auto-named internal nodes if needed):\n")
+            fw.write("## Processed tree used for planning (conditionally rerooted; auto-named internal nodes if needed):\n")
             fw.write(self.processed_tree_newick() + "\n\n")
             fw.write("## Tree view:\n")
             fw.write(self.processed_tree_ascii() + "\n\n")
@@ -1104,9 +1452,12 @@ class Planner:
                     fw.write(self.consensus_pipeline_cmd(task) + "\n\n")
                     cmd_no += 1
 
-            if regraft_tasks:
-                fw.write(f"## After Command{cmd_no - 1} is done, run descendant-HAL regrafting:\n")
-                fw.write("bash ${RUN_PATH}/consensus_regraft.sh\n\n")
+            if self.root_task is not None:
+                if regraft_tasks:
+                    fw.write(f"## After Command{cmd_no - 1} is done, run descendant-HAL regrafting and final alignment export:\n")
+                else:
+                    fw.write(f"## After Command{cmd_no - 1} is done, run final alignment export:\n")
+                fw.write("bash ${RUN_PATH}/finalization.sh\n\n")
 
             fw.write("## The planning step is done. The final root-level workspace is under:\n")
             if self.root_task is not None:
@@ -1117,20 +1468,24 @@ class Planner:
         return instruction
 
 
+# =============================================================================
+# 5. CLI
+# =============================================================================
+
 def build_arg_parser() -> argparse.ArgumentParser:
     script_dir = Path(__file__).resolve().parent
-    default_generator = script_dir / "generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py"
+    default_generator = script_dir / "generate_random_guidetrees_2models_2modes_finalver.py"
     default_pipeline = script_dir / "RunPipelineUseThis.sh"
     default_model_file = script_dir / "tryMLstartree.mod"
     default_maf_to_concat_fasta = script_dir / "maf_to_concat_fasta.py"
 
     ap = argparse.ArgumentParser(description="Plan hierarchical Cactus runs from a partially resolved tree.")
-    ap.add_argument("--tree", required=True, help="Input rooted Newick tree string")
-    ap.add_argument("--reference", required=True, help="Reference / outgroup taxon name")
+    ap.add_argument("--tree", required=True, help="Input Newick tree string. It is rerooted to the reference unless the reference is already a direct child of the input top root.")
+    ap.add_argument("--reference", required=True, help="Reference / outgroup taxon name used for reference-coordinate consensus extraction")
     ap.add_argument("--paths", required=True, type=Path, help="Two-column file: taxon path")
     ap.add_argument("--outdir", default=".", type=Path, help="Output directory (default: current working directory)")
 
-    ap.add_argument("--generator", default=str(default_generator), help="Path to generate_random_guidetrees_2models_2modes_usethis_fast2_finalver.py")
+    ap.add_argument("--generator", default=str(default_generator), help="Path to generate_random_guidetrees_2models_2modes_finalver.py")
     ap.add_argument("--guide-num-trees", type=int, default=None, help="Pass through to the guide-tree generator")
     ap.add_argument("--guide-model", choices=["uniform", "yule"], default=None, help="Pass through to the guide-tree generator")
     ap.add_argument("--guide-rf-threshold", default=None, help="Pass through to the guide-tree generator")
@@ -1144,7 +1499,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--maf_to_concat_fasta", default=str(default_maf_to_concat_fasta), help="Path to maf_to_concat_fasta.py")
     ap.add_argument("--threads", required=True, type=int, help="Pass through to RunPipelineUseThis.sh --threads")
     ap.add_argument("--common_workers", required=True, type=int, help="Pass through to RunPipelineUseThis.sh --common_workers")
-    ap.add_argument("--ModelFile", required=True, type=Path, help="Path to the base model file used by RunPipelineUseThis.sh")
+    ap.add_argument("--ModelFile", default=str(default_model_file), type=Path, help="Path to the base model file used by RunPipelineUseThis.sh; default: tryMLstartree.mod in the same directory as this planner")
     ap.add_argument("--sep_length", type=int, default=None, help="Pass through to RunPipelineUseThis.sh")
     ap.add_argument("--chrom_length_threshold", type=int, default=None, help="Pass through to RunPipelineUseThis.sh")
     ap.add_argument("--global_num", type=int, default=None, help="Pass through to RunPipelineUseThis.sh")
@@ -1162,7 +1517,27 @@ def main() -> None:
 
     raw_root = parse_newick(args.tree)
     validate_existing_node_names(raw_root)
-    root = collapse_unary_nodes(reroot_at_reference(raw_root, args.reference))
+    find_leaf(raw_root, args.reference)
+
+    # Conditional rerooting rule:
+    #   - If the input tree is already fully binary, keep the input rooting.
+    #     A fully resolved tree should be treated as a fixed-task hierarchy,
+    #     not rewritten by moving the reference to the top.
+    #   - Else, if the reference is already a direct child of the input top root,
+    #     keep the input rooting.  This preserves cases such as
+    #         (GALGA,CATAU,(CHLUN,(COLLI,MESUN)));
+    #     as a true root-level 3-way consensus task with GALGA participating.
+    #   - Otherwise, reroot to the reference, which is the original planner
+    #     behavior for non-binary partially resolved trees whose top root does
+    #     not already contain the reference as a direct child.
+    input_root = collapse_unary_nodes(raw_root)
+    if is_fully_binary_tree(input_root):
+        root = input_root
+    elif root_has_direct_reference(input_root, args.reference):
+        root = input_root
+    else:
+        root = collapse_unary_nodes(reroot_at_reference(input_root, args.reference))
+
     auto_name_internal_nodes(root)
 
     generator = Path(args.generator).resolve()
@@ -1215,7 +1590,7 @@ def main() -> None:
     )
     planner.plan()
     planner.write_all_task_files()
-    planner.write_consensus_regraft_script()
+    planner.write_finalization_script()
     instruction = planner.write_instruction()
 
     print("Done.")
