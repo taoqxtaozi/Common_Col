@@ -1,0 +1,4 @@
+(COLLI,(MESUN,PTEGU)Anc_in1)interior26;
+COLLI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/COLLI.fa
+MESUN /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/MESUN.fa
+PTEGU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/PTEGU.fa
