@@ -1,5 +1,0 @@
-(GALGA,((APAVI,CATAU)Anc_in1_1,COLST)Anc_in1)Anc_root;
-APAVI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/APAVI.fa
-CATAU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/CATAU.fa
-COLST /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/COLST.fa
-GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/GALGA.fa

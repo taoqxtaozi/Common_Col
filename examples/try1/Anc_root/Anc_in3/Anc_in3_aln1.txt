@@ -1,4 +1,0 @@
-(LEPDI,(APAVI,PICPU)Anc_in2)Anc_in3;
-APAVI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/APAVI.fa
-LEPDI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/LEPDI.fa
-PICPU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/PICPU.fa

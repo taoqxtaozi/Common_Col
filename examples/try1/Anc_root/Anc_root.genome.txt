@@ -1,6 +1,0 @@
-Anc_in1 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/Anc_root/Anc_in1/Anc_in1.fa
-Anc_in3 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/Anc_root/Anc_in3/Anc_in3.fa
-Anc_in7 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/try1/Anc_root/Anc_in7/Anc_in7.fa
-COLST /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/COLST.fa
-GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/GALGA.fa
-TYTAL /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/trys/TYTAL.fa
