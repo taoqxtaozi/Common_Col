@@ -1,0 +1,110 @@
+Running reference-outgroup ancestor branch
+  Ingroup ancestor name: Anc_in3
+  Top ancestor name: Anc_in3_GALGA
+  Ancestor inference unit: per reference chromosome
+  Preparing chromosome for ingroup task-level model: GALGA.chr20
+  Preparing chromosome for ingroup task-level model: GALGA.chr21
+  Preparing chromosome for ingroup task-level model: GALGA.chr22
+  Processing chromosome: GALGA.chr20
+Anc_in3:  898 segments, 682 set entries, 0 dupe rows, 1 sequences
+CHLUN:  823 segments, 653 set entries, 0 dupe rows, 1 sequences
+CUCCA:  840 segments, 672 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 682
+block 0
+Wed Jun 10 17:23:09 CST 2026
+  Processing chromosome: GALGA.chr21
+Anc_in3:  376 segments, 327 set entries, 0 dupe rows, 1 sequences
+CHLUN:  229 segments, 206 set entries, 0 dupe rows, 1 sequences
+CUCCA:  229 segments, 194 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 327
+block 0
+Wed Jun 10 17:23:11 CST 2026
+  Processing chromosome: GALGA.chr22
+Anc_in3:  901 segments, 692 set entries, 0 dupe rows, 1 sequences
+CHLUN:  909 segments, 733 set entries, 0 dupe rows, 1 sequences
+CUCCA:  905 segments, 752 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 692
+block 0
+Wed Jun 10 17:23:12 CST 2026
+  Processing chromosome for top ancestor: GALGA.chr20
+Anc_in3:  682 segments, 682 set entries, 0 dupe rows, 1 sequences
+Anc_in3_GALGA:  682 segments, 682 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 682
+block 0
+Wed Jun 10 17:23:14 CST 2026
+  Processing chromosome for top ancestor: GALGA.chr21
+Anc_in3:  327 segments, 327 set entries, 0 dupe rows, 1 sequences
+Anc_in3_GALGA:  327 segments, 327 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 327
+block 0
+Wed Jun 10 17:23:15 CST 2026
+  Processing chromosome for top ancestor: GALGA.chr22
+Anc_in3:  692 segments, 692 set entries, 0 dupe rows, 1 sequences
+Anc_in3_GALGA:  692 segments, 692 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 692
+block 0
+Wed Jun 10 17:23:16 CST 2026
+Anc_in3:  2175 segments, 1701 set entries, 0 dupe rows, 3 sequences
+CHLUN:  1961 segments, 1592 set entries, 0 dupe rows, 3 sequences
+CUCCA:  1974 segments, 1618 set entries, 0 dupe rows, 3 sequences
+TAUER:  1166 segments, 942 set entries, 0 dupe rows, 2 sequences
+Total Number of blocks in maf: 1701
+block 0
+Wed Jun 10 17:23:18 CST 2026
+Anc_in3:  1701 segments, 1701 set entries, 0 dupe rows, 3 sequences
+Anc_in3_GALGA:  1701 segments, 1701 set entries, 0 dupe rows, 3 sequences
+GALGA:  1009 segments, 1009 set entries, 0 dupe rows, 2 sequences
+Total Number of blocks in maf: 1701
+block 0
+Wed Jun 10 17:23:20 CST 2026
+Pipeline finished.
+Final consensus MAF output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/Anc_in3/consensus.maf
+Final consensus FASTA output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/Anc_in3/consensus.fasta
+Final consensus HAL output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/Anc_in3/consensus.hal
+Final ingroup ancestor FASTA output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/Anc_in3/Anc_in3.fa
+Final top ancestor FASTA output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/Anc_in3/Anc_in3_GALGA.fa
+Temporary workspace deleted: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/Anc_in3/tmp_tiVyfv
+Running ancestor branch: reference is not an outgroup; one ancestor inferred from reference + non-reference taxa
+  Ancestor name: Root
+  Ancestor inference unit: per reference chromosome
+  Preparing chromosome for task-level model: GALGA.chr20
+  Preparing chromosome for task-level model: GALGA.chr21
+  Preparing chromosome for task-level model: GALGA.chr22
+  Processing chromosome: GALGA.chr20
+Anc_in2:  623 segments, 571 set entries, 13 dupe rows, 2 sequences
+Anc_in3:  657 segments, 572 set entries, 0 dupe rows, 1 sequences
+CATAU:  633 segments, 568 set entries, 0 dupe rows, 1 sequences
+GALGA:  702 segments, 616 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 616
+block 0
+Wed Jun 10 17:38:12 CST 2026
+  Processing chromosome: GALGA.chr21
+Anc_in2:  276 segments, 228 set entries, 0 dupe rows, 1 sequences
+Anc_in3:  316 segments, 233 set entries, 0 dupe rows, 1 sequences
+CATAU:  289 segments, 214 set entries, 0 dupe rows, 1 sequences
+GALGA:  317 segments, 234 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 234
+block 0
+Wed Jun 10 17:38:12 CST 2026
+  Processing chromosome: GALGA.chr22
+Anc_in2:  637 segments, 547 set entries, 0 dupe rows, 1 sequences
+Anc_in3:  644 segments, 500 set entries, 0 dupe rows, 1 sequences
+CATAU:  670 segments, 553 set entries, 0 dupe rows, 1 sequences
+GALGA:  669 segments, 525 set entries, 0 dupe rows, 1 sequences
+Total Number of blocks in maf: 525
+block 0
+Wed Jun 10 17:38:13 CST 2026
+Anc_in2:  1536 segments, 1346 set entries, 13 dupe rows, 4 sequences
+Anc_in3:  1617 segments, 1305 set entries, 0 dupe rows, 3 sequences
+CATAU:  1592 segments, 1335 set entries, 0 dupe rows, 3 sequences
+GALGA:  1688 segments, 1375 set entries, 0 dupe rows, 3 sequences
+Root:  1019 segments, 850 set entries, 0 dupe rows, 2 sequences
+Total Number of blocks in maf: 1375
+block 0
+Wed Jun 10 17:38:16 CST 2026
+Pipeline finished.
+Final consensus MAF output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/consensus.maf
+Final consensus FASTA output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/consensus.fasta
+Final consensus HAL output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/consensus.hal
+Final ancestor FASTA output: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/Root.fa
+Temporary workspace deleted: /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/Root/tmp_bAFKIu

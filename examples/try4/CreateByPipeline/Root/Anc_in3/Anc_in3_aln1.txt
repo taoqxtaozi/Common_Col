@@ -1,0 +1,5 @@
+(GALGA,((CUCCA,CHLUN)Anc_in3_1,TAUER)Anc_in3)Anc_in3_GALGA;
+CHLUN /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/CHLUN.fa
+CUCCA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/CUCCA.fa
+GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/GALGA.fa
+TAUER /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try4/TAUER.fa
