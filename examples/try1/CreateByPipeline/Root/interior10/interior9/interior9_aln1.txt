@@ -1,0 +1,6 @@
+(GALGA,((interior4,FALPE)interior9_1,(CARCR,interior2)interior9_2)interior9)interior9_GALGA;
+CARCR /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/CARCR.fa
+FALPE /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/FALPE.fa
+GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/GALGA.fa
+interior2 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/Root/interior10/interior9/interior2/interior2.fa
+interior4 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/Root/interior10/interior9/interior4/interior4.fa
