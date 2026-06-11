@@ -1,0 +1,7 @@
+(TAEGU,(CORBR,(MANVI,((GEOFO,interior9)interior4_1,ACACH)interior4_2)interior4_3)interior4)Root;
+ACACH /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/ACACH.fa
+CORBR /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/CORBR.fa
+GEOFO /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/GEOFO.fa
+MANVI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/MANVI.fa
+TAEGU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/TAEGU.fa
+interior9 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/Root/interior9/interior9.fa
