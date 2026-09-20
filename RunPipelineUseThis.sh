@@ -95,7 +95,7 @@ Notes:
   * This script may be run from any directory.
   * The code files are expected to be located in the same directory as this script:
       - seperate_maffile_by_refchrom.py
-      - seperate_maffile_by_index_faster.py
+      - seperate_maffile_by_index.py
       - Extract_consensus_multi_alns.py
       - maf_to_concat_fasta.py
       - add_ance2mafwithN.py
@@ -430,8 +430,8 @@ if [[ ! -f "$script_dir/seperate_maffile_by_refchrom.py" ]]; then
     exit 1
 fi
 
-if [[ ! -f "$script_dir/seperate_maffile_by_index_faster.py" ]]; then
-    echo "Error: seperate_maffile_by_index_faster.py not found in script directory."
+if [[ ! -f "$script_dir/seperate_maffile_by_index.py" ]]; then
+    echo "Error: seperate_maffile_by_index.py not found in script directory."
     rm -rf "$work_dir"
     exit 1
 fi
@@ -495,7 +495,7 @@ long_chrom_count=0
 # 8. Use the directory generated from the last input file as the template.
 #    For long chromosomes, prepare consensus commands for all expected chunks.
 #    The actual chunk files will be generated later by
-#    seperate_maffile_by_index_faster.py, which scans each chromosome MAF
+#    seperate_maffile_by_index.py, which scans each chromosome MAF
 #    only once and writes all chunks in one run.
 ############################
 
@@ -620,7 +620,7 @@ if (( long_chrom_count > 0 )); then
             fi
 
             split_job_cmds+=(
-                "mkdir -p \"$output_chunk_dir\" && python \"$script_dir/seperate_maffile_by_index_faster.py\" \"$input_maf\" \"$sep_length\" \"$output_chunk_dir\""
+                "mkdir -p \"$output_chunk_dir\" && python \"$script_dir/seperate_maffile_by_index.py\" \"$input_maf\" \"$sep_length\" \"$output_chunk_dir\""
             )
         done
     done
