@@ -24,7 +24,7 @@ After this, `${ConsensusExtractionPATH}` refers to the root directory of this re
 
 ### 1.2 Install Progressive Cactus
 
-This pipeline is designed to work with **Progressive Cactus**, and we recommend using **v2.9.2**.
+This pipeline is designed to work with **Progressive Cactus**, and we recommend using **v3.3.0**.
 
 Please install Progressive Cactus first and enter the corresponding cactus environment before running the pipeline.
 
@@ -1074,17 +1074,17 @@ you can start from this workflow. This workflow converts the HAL files to MAF, e
 For each HAL file, run `cactus-hal2maf` using the same reference taxon:
 
 ```bash
-cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln1 aln1.hal aln1.maf
+cactus-hal2maf --outType single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln1 aln1.hal aln1.maf
 ```
 
 Repeat this for all HAL files:
 
 ```bash
-cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln1 aln1.hal aln1.maf
-cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln2 aln2.hal aln2.maf
-cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln3 aln3.hal aln3.maf
+cactus-hal2maf --outType single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln1 aln1.hal aln1.maf
+cactus-hal2maf --outType single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln2 aln2.hal aln2.maf
+cactus-hal2maf --outType single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafaln3 aln3.hal aln3.maf
 ...
-cactus-hal2maf --dupeMode single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafalnN alnN.hal alnN.maf
+cactus-hal2maf --outType single --chunkSize 500000 --refGenome ${reference} --noAncestors jobstorehal2mafalnN alnN.hal alnN.maf
 ```
 
 This will give:
