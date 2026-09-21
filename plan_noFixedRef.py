@@ -21,7 +21,7 @@ Core conventions
    select_longest_reference.py.
 6. The selected local reference is used only for:
        - cactus-hal2maf --refGenome
-       - RunPipelineUseThis_faster.sh --reference
+       - RunPipelineUseThis.sh --reference
    and every consensus task uses --ifRefNonOutgroup 0.
 7. The root-level final HAL -> MAF export also requires a coordinate reference.
    That export-only reference is supplied explicitly with --final_reference.
@@ -444,7 +444,7 @@ class Planner:
 
     def task_primary_hal(self, task: Task) -> Path:
         if task.kind == "consensus":
-            # RunPipelineUseThis_faster.sh is called with --pre <task.folder>/consensus.
+            # RunPipelineUseThis.sh is called with --pre <task.folder>/consensus.
             return task.folder / "consensus.hal"
         return task.folder / f"{task.name}_aln1.hal"
 
@@ -1217,7 +1217,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         script_dir
         / "generate_random_guidetrees_2models_2modes_finalver.py"
     )
-    default_pipeline = script_dir / "RunPipelineUseThis_faster.sh"
+    default_pipeline = script_dir / "RunPipelineUseThis.sh"
     default_reference_selector = script_dir / "select_longest_reference.py"
     default_model_file = script_dir / "tryMLstartree.mod"
     default_maf_to_concat_fasta = script_dir / "maf_to_concat_fasta.py"
@@ -1313,7 +1313,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--pipeline",
         default=str(default_pipeline),
-        help="Path to RunPipelineUseThis_faster.sh",
+        help="Path to RunPipelineUseThis.sh",
     )
     ap.add_argument(
         "--reference-selector",
@@ -1332,20 +1332,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--threads",
         required=True,
         type=int,
-        help="Pass through to RunPipelineUseThis_faster.sh --threads",
+        help="Pass through to RunPipelineUseThis.sh --threads",
     )
     ap.add_argument(
         "--common_workers",
         required=True,
         type=int,
-        help="Pass through to RunPipelineUseThis_faster.sh --common_workers",
+        help="Pass through to RunPipelineUseThis.sh --common_workers",
     )
     ap.add_argument(
         "--ModelFile",
         default=str(default_model_file),
         type=Path,
         help=(
-            "Base model file used by RunPipelineUseThis_faster.sh; "
+            "Base model file used by RunPipelineUseThis.sh; "
             "default: tryMLstartree.mod in the planner directory"
         ),
     )
@@ -1353,25 +1353,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--sep_length",
         type=int,
         default=None,
-        help="Pass through to RunPipelineUseThis_faster.sh",
+        help="Pass through to RunPipelineUseThis.sh",
     )
     ap.add_argument(
         "--chrom_length_threshold",
         type=int,
         default=None,
-        help="Pass through to RunPipelineUseThis_faster.sh",
+        help="Pass through to RunPipelineUseThis.sh",
     )
     ap.add_argument(
         "--global_num",
         type=int,
         default=None,
-        help="Pass through to RunPipelineUseThis_faster.sh",
+        help="Pass through to RunPipelineUseThis.sh",
     )
     ap.add_argument(
         "--separate_workers",
         type=int,
         default=None,
-        help="Pass through to RunPipelineUseThis_faster.sh",
+        help="Pass through to RunPipelineUseThis.sh",
     )
 
     return ap
