@@ -70,34 +70,53 @@ The pipeline scripts automatically run `chmod +x` on the bundled executables whe
 
 This is the recommended workflow if you start from genome FASTA files and want the repository to organize Progressive Cactus runs, consensus extraction, and downstream ancestor inference automatically.
 
-The input tree must be **rooted**. It may be fully binary, partially resolved, or fully unresolved. Before planning alignment tasks, the planner applies a conditional reference-rooting rule. If the input tree is fully binary, the pipeline plans runs a normal Progressive Cactus alignment run. If the tree is not fully binary but the reference is already a direct child of the input top root, the reference participates as a direct alignment element at the root-level task. In all other non-binary cases, the tree is rerooted so that the reference becomes the top-level outgroup. After this processing step, the pipeline identifies unresolved regions and builds a hierarchical alignment workflow that proceeds from lower-level tasks to higher-level tasks.
+The input tree must be **rooted**. It may be fully binary, partially resolved, or fully unresolved.
+
+The main workflow supports two reference modes:
+
+1. **Fixed-global-reference mode (`--noFixedRef 0`, default)**  
+   A global reference taxon is specified using `--reference`. In this mode, `make_plan.sh` automatically uses `plan_GlobalRef.py`. The planner applies the reference-aware rooting rules described below and uses the specified reference for consensus-coordinate handling throughout the hierarchical workflow.
+
+2. **No-fixed-reference mode (`--noFixedRef 1`)**  
+   No global reference is used during hierarchical planning. In this mode, `make_plan.sh` automatically uses `plan_noFixedRef.py`. The rooting of the input tree is preserved, and each consensus task independently selects the longest genome among the genomes directly participating in that task as its local reference. This local reference is used only where a coordinate reference is required, such as MAF export and consensus-column extraction for that task.
+
+   Because the final complete HAL-to-MAF export still requires a coordinate reference, this mode requires `--final_reference`. The final reference is used only for the final export and does not affect tree rooting, guide-tree generation, Progressive Cactus alignment, or per-task local-reference selection.
+
+In the default fixed-global-reference mode, the planner applies a conditional reference-rooting rule. If the input tree is fully binary, the pipeline plans a normal Progressive Cactus alignment run. If the tree is not fully binary but the reference is already a direct child of the input top root, the reference participates as a direct alignment element at the root-level task. In other non-binary cases, the tree is rerooted so that the reference becomes the top-level outgroup.
+
+In the no-fixed-reference mode, the input rooting is preserved and no reference-driven rerooting is performed.
+
+After the tree has been prepared according to the selected mode, the pipeline identifies unresolved regions and builds a hierarchical alignment workflow that proceeds from lower-level tasks to higher-level tasks.
 
 At each unresolved internal node, the pipeline generates multiple guide-tree-specific alignments and combines them into a consensus alignment:
 
-- For a **3-way** polytomy, the pipeline enumerates **all three possible rooted binary topologies** and builds one alignment for each topology.
-- For a **4-way** polytomy, the pipeline generates fully resolved binary guide trees automatically using our script `generate_random_guidetrees_2models_2modes_finalver.py`. By default, **four** guide trees are used, although the user can change this number through the global `--guide-num-trees` option of `make_plan.sh`.
+- For a **3-way polytomy**, the pipeline enumerates **all three possible binary topologies** and builds one alignment for each topology.
+- For a polytomy with **more than three direct alignment units**, the pipeline generates fully resolved binary guide trees automatically using `generate_random_guidetrees_2models_2modes_finalver.py`.
+- By default, **four** guide trees are requested for such larger polytomies, although the user can change this number through `--guide-num-trees`.
 - See **Section 2.6** for more details on guide-tree generation.
 
-For each lower-level unresolved node, the pipeline extracts a consensus alignment from these guide-tree-specific alignments and infers an ancestor genome from that consensus. This inferred consensus ancestor is then used as an input genome for the next higher-level alignment step. The procedure continues hierarchically until the top level is reached.
+For each lower-level unresolved node, the pipeline extracts a consensus alignment from the corresponding guide-tree-specific alignments and infers an ancestor genome from that consensus. This inferred consensus ancestor is then used as an input genome for the next higher-level alignment step. The procedure continues hierarchically until the top level is reached.
 
-Finally, lower-level sub-consensus alignments are regrafted into the root-level alignment.
+Finally, lower-level consensus HAL subtrees are regrafted into the root-level alignment.
 
-**The pipeline then outputs the final consensus alignment for all taxa in MAF, FASTA and HAL format, together with the inferred ancestor genome.**
+**The pipeline outputs the final consensus alignment for all taxa in MAF, FASTA, and HAL format, together with the inferred root ancestor genome.**
 
-**All commands required for this workflow are written automatically to the `instruction.txt` file generated by the following command.**
+**All commands required for this workflow are written automatically to the `instruction.txt` file generated by `make_plan.sh`.**
 
 ### 2.1 Required inputs
 
 You need to provide:
 
 1. **A rooted tree**
-   - either as a tree string via `--tree`
+   - either as a Newick string via `--tree`
    - or as a file via `--tree-file`
+   - the tree may be fully binary, partially resolved, or fully unresolved
 
-2. **A genome-path file** (provided via `--paths`; here we use `aln.txt` as an example)
-   - two columns separated by spaces
+2. **A genome-path file**
+   - provided via `--paths`
+   - two whitespace-separated columns
    - first column: taxon name
-   - second column: genome file path
+   - second column: genome FASTA path
 
 For example:
 
@@ -108,18 +127,57 @@ C C.fa
 D D.fa
 ```
 
-3. **A reference taxon**
-   - provided by `--reference`
-   - this taxon is used as the reference coordinate system for consensus extraction
-   - depending on its position in the input tree, it may either participate as a direct alignment element or be used as an external reference/outgroup
+3. **A reference setting**
+
+   The required reference argument depends on the selected reference mode.
+
+   **Default: fixed global reference (`--noFixedRef 0`)**
+
+   - provide the global reference taxon with `--reference`
+   - `--global_reference` is accepted as an alias of `--reference`
+   - the reference taxon must occur in both the input tree and the `--paths` file
+
+   Example:
+
+   ```bash
+   --reference A
+   ```
+
+   **No fixed global reference (`--noFixedRef 1`)**
+
+   - do **not** provide `--reference`
+   - provide `--final_reference`
+   - each consensus task selects its own local reference automatically
+   - `--final_reference` is used only for the final complete HAL-to-MAF export
+   - the final reference taxon must occur in both the input tree and the `--paths` file
+
+   Example:
+
+   ```bash
+   --noFixedRef 1 --final_reference A
+   ```
 
 4. **CPU settings**
-   - `--threads`: total CPU budget available on the machine
-   - `--common_workers`: CPUs used by one consensus-extraction program
+   - `--threads`: total CPU budget available to the consensus-processing pipeline
+   - `--common_workers`: CPUs used by one consensus-extraction job
+
+The maximum number of consensus-extraction jobs that can run simultaneously is approximately:
+
+```text
+floor(threads / common_workers)
+```
+
+The chromosome-level ancestor-inference stage uses the same parallelism rule.
+
+---
 
 ### 2.2 Basic usage
 
-Run the following command with the default settings:
+#### Default mode: fixed global reference
+
+If `--noFixedRef` is omitted, it defaults to `0`.
+
+Run:
 
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
@@ -130,11 +188,59 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
   --common_workers Num2
 ```
 
-See **Section 2.5** for parameter explanations.
+This automatically uses:
+
+```text
+plan_GlobalRef.py
+```
+
+The same reference can alternatively be specified with:
+
+```bash
+--global_reference A
+```
+
+#### No-fixed-reference mode
+
+To avoid using one fixed global reference throughout the hierarchical workflow, set:
+
+```bash
+--noFixedRef 1
+```
+
+For example:
+
+```bash
+bash ${ConsensusExtractionPATH}/make_plan.sh \
+  --tree-file aln.tre \
+  --noFixedRef 1 \
+  --final_reference A \
+  --paths aln.txt \
+  --threads Num1 \
+  --common_workers Num2
+```
+
+This automatically uses:
+
+```text
+plan_noFixedRef.py
+```
+
+In this mode:
+
+- the input tree rooting is preserved;
+- no reference is used to reroot the tree;
+- guide-tree generation does not depend on a reference;
+- each consensus task selects the longest directly participating genome as its local reference;
+- `--final_reference` is used only for the final complete HAL-to-MAF export.
+
+Users do not need to specify the planner manually.
+
+---
 
 ### 2.3 More examples
 
-Use a rooted tree file and write outputs to the current directory:
+#### Fixed global reference with a rooted tree file
 
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
@@ -146,7 +252,7 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
   --outdir .
 ```
 
-Use a rooted Newick string directly:
+#### Fixed global reference with a Newick string
 
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
@@ -157,7 +263,34 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
   --common_workers 15
 ```
 
-Pass guide-tree generator options through to the planner:
+#### No fixed global reference
+
+```bash
+bash ${ConsensusExtractionPATH}/make_plan.sh \
+  --tree-file aln.tre \
+  --noFixedRef 1 \
+  --final_reference A \
+  --paths aln.txt \
+  --threads 60 \
+  --common_workers 15 \
+  --outdir .
+```
+
+#### No fixed global reference with a Newick string
+
+```bash
+bash ${ConsensusExtractionPATH}/make_plan.sh \
+  --tree '(A,(B,C,D));' \
+  --noFixedRef 1 \
+  --final_reference A \
+  --paths aln.txt \
+  --threads 60 \
+  --common_workers 15
+```
+
+#### Pass guide-tree generator options through to the planner
+
+The following example uses the default fixed-global-reference mode:
 
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
@@ -172,7 +305,25 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
   --guide-num-trees 4
 ```
 
-Specify additional options that will later be passed to `RunPipelineUseThis.sh`:
+The same guide-tree options can also be used in no-fixed-reference mode:
+
+```bash
+bash ${ConsensusExtractionPATH}/make_plan.sh \
+  --tree-file aln.tre \
+  --noFixedRef 1 \
+  --final_reference A \
+  --paths aln.txt \
+  --threads 60 \
+  --common_workers 15 \
+  --guide-model yule \
+  --guide-rf-threshold 1 \
+  --guide-t-threshold 0.6666667 \
+  --guide-num-trees 4
+```
+
+#### Specify additional consensus-processing options
+
+These options are passed through to the consensus-processing stage:
 
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
@@ -187,23 +338,48 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
   --separate_workers 4
 ```
 
+---
+
 ### 2.4 `make_plan.sh` produces instruction commands to run
 
-Running `make_plan.sh` does **not** directly run the full analysis. Instead, it creates:
+Running `make_plan.sh` does **not** directly run the full analysis.
 
-- a **program working directory** under `--outdir`
-- an `instruction.txt` file
-- a `finalization.sh` file
+Instead, it prepares the hierarchical analysis and creates:
 
-The `instruction.txt` file contains all commands that need to be run, including guide-tree-specific Cactus alignments, consensus extraction, ancestor inference, and the final export step. The final export step is handled by `finalization.sh`.
+- the task directories under `--outdir`;
+- an `instruction.txt` file;
+- a `finalization.sh` file.
 
-The `finalization.sh` script copies the root-level primary HAL to a stable final-working HAL, regrafts lower-level consensus HAL subtrees when needed, exports the final MAF and FASTA files, and moves the final outputs into `final_output/`.
+The `instruction.txt` file contains the commands that need to be run, including:
 
-The user only needs to **copy and paste the commands from `instruction.txt`** and run them in order.
+- guide-tree-specific Progressive Cactus alignments;
+- HAL-to-MAF conversion where required;
+- consensus-column extraction;
+- ancestor inference;
+- higher-level alignment tasks;
+- the final alignment-export step.
 
-**After running all commands from `instruction.txt`, the final outputs will be written under `final_output/`.**
+Commands belonging to independent tasks at the same dependency level may be marked as runnable in parallel.
 
-The main final outputs are:
+The user should run the commands in `instruction.txt` in the indicated dependency order.
+
+The final export step is handled by:
+
+```text
+finalization.sh
+```
+
+The `finalization.sh` script:
+
+1. copies the root-level primary HAL to a stable final-working HAL;
+2. regrafts lower-level consensus HAL subtrees when required;
+3. exports the complete final alignment to MAF;
+4. converts the final MAF to concatenated FASTA;
+5. moves the final outputs into `final_output/`.
+
+**After all commands from `instruction.txt` have been completed, the main final outputs are written under `final_output/`.**
+
+Typical final outputs are:
 
 ```text
 final_output/FinalResultAlignment.hal
@@ -212,210 +388,575 @@ final_output/FinalResultAlignment.fasta
 final_output/Root.fa
 ```
 
+The exact inferred ancestor FASTA filename follows the name of the root node in the planned tree.
+
+---
+
 ### 2.5 Parameter-by-parameter explanation for `make_plan.sh`
 
-`--tree`  
-Provide the rooted Newick tree directly as a string.  
+#### `--tree`
+
+Provide the rooted Newick tree directly as a string.
+
 Example:
 
 ```bash
 --tree '(A,(B,C),D);'
 ```
 
-`--tree-file`  
-Provide a file containing one rooted Newick tree.  
+Use either `--tree` or `--tree-file`, but not both.
+
+---
+
+#### `--tree-file`
+
+Provide a file containing one rooted Newick tree.
+
 Example:
 
 ```bash
 --tree-file aln.tre
 ```
 
-`--reference`  
-Reference / outgroup taxon name. This taxon must also appear in the `--paths` file.  
+Use either `--tree-file` or `--tree`, but not both.
+
+---
+
+#### `--noFixedRef`
+
+Select the reference mode.
+
+Choices:
+
+```text
+0
+1
+```
+
+Default:
+
+```text
+0
+```
+
+`--noFixedRef 0`:
+
+- uses `plan_GlobalRef.py`;
+- requires `--reference`;
+- uses the fixed-global-reference workflow.
+
+`--noFixedRef 1`:
+
+- uses `plan_noFixedRef.py`;
+- does not use a global reference;
+- preserves the input rooting;
+- automatically selects a local reference for each consensus task;
+- requires `--final_reference` for the final complete HAL-to-MAF export.
+
+Examples:
+
+```bash
+--noFixedRef 0
+```
+
+or:
+
+```bash
+--noFixedRef 1
+```
+
+Normally `--noFixedRef 0` does not need to be written explicitly because it is the default.
+
+---
+
+#### `--reference`
+
+Global reference taxon used in the default fixed-reference mode.
+
+This option is valid when:
+
+```bash
+--noFixedRef 0
+```
+
+The reference taxon must also occur in the input tree and in the `--paths` file.
+
 Example:
 
 ```bash
 --reference A
 ```
 
-`--paths`  
-Two-column file containing taxon names and genome paths.  
+The equivalent alias is:
+
+```bash
+--global_reference A
+```
+
+Do not use `--reference` or `--global_reference` together with:
+
+```bash
+--noFixedRef 1
+```
+
+---
+
+#### `--global_reference`
+
+Alias of:
+
+```bash
+--reference
+```
+
+Example:
+
+```bash
+--global_reference A
+```
+
+It is used only in the fixed-global-reference mode.
+
+---
+
+#### `--final_reference`
+
+Reference genome used only for the final complete HAL-to-MAF export in the no-fixed-reference mode.
+
+This option is required when:
+
+```bash
+--noFixedRef 1
+```
+
+Example:
+
+```bash
+--final_reference A
+```
+
+It does **not** affect:
+
+- input-tree rooting;
+- guide-tree generation;
+- Progressive Cactus alignment;
+- local-reference selection;
+- per-task consensus construction.
+
+Do not use `--final_reference` in the default fixed-global-reference mode.
+
+---
+
+#### `--paths`
+
+Two-column file containing taxon names and genome paths.
+
 Example:
 
 ```bash
 --paths aln.txt
 ```
 
-`--threads`  
-Total CPU budget available on the machine.  
+Example file:
+
+```text
+A /path/to/A.fa
+B /path/to/B.fa
+C /path/to/C.fa
+D /path/to/D.fa
+```
+
+Relative genome paths may also be used where supported by the planner.
+
+---
+
+#### `--threads`
+
+Total CPU budget supplied to the consensus-processing pipeline.
+
 Example:
 
 ```bash
 --threads 60
 ```
 
-`--common_workers`  
-CPUs used by one consensus-extraction program. The maximum number of consensus jobs run in parallel is approximately `floor(threads / common_workers)`.  
+Together with `--common_workers`, this also controls the maximum number of chromosome-level jobs run simultaneously.
+
+---
+
+#### `--common_workers`
+
+CPUs used by one consensus-extraction program.
+
 Example:
 
 ```bash
 --common_workers 15
 ```
 
-`--outdir`  
-Output directory for the planning results. Default: current working directory.  
+The maximum number of parallel consensus jobs is approximately:
+
+```text
+floor(threads / common_workers)
+```
+
+The same calculation is used to limit chromosome-level ancestor-inference parallelism.
+
+For example:
+
+```text
+--threads 80
+--common_workers 5
+```
+
+allows up to:
+
+```text
+floor(80 / 5) = 16
+```
+
+such jobs to run simultaneously.
+
+---
+
+#### `--outdir`
+
+Output directory for the planning results.
+
+Default:
+
+```text
+current working directory
+```
+
 Example:
 
 ```bash
 --outdir results_dir
 ```
 
-`--python`  
-Python executable used to run the planner. Default: `python3`.  
+---
+
+#### `--python`
+
+Python executable used to run the selected planner.
+
+Default:
+
+```text
+python3
+```
+
 Example:
 
 ```bash
 --python python3
 ```
 
-`--generator`  
-Path to `generate_random_guidetrees_2models_2modes_finalver.py`.  
+---
+
+#### `--generator`
+
+Path to:
+
+```text
+generate_random_guidetrees_2models_2modes_finalver.py
+```
+
+By default, the copy located in the same directory as the selected planner is used.
+
 Example:
 
 ```bash
 --generator ${ConsensusExtractionPATH}/generate_random_guidetrees_2models_2modes_finalver.py
 ```
 
-`--generator-python`  
-Python executable used to run the guide-tree generator.  
+---
+
+#### `--generator-python`
+
+Python executable used to run the guide-tree generator.
+
+By default, the same Python executable as `--python` is used.
+
 Example:
 
 ```bash
 --generator-python python3
 ```
 
-`--guide-num-trees`  
-Passed through to the guide-tree generator as `--num_trees`. This controls how many guide trees are generated for polytomies with more than three ingroup units. By default, the pipeline uses **4** guide trees for such nodes unless the user specifies otherwise. Under strict thresholds, if the generator cannot find the requested number of mutually distant guide trees, it returns the largest valid set it can find.  
+---
+
+#### `--guide-num-trees`
+
+Passed through to the guide-tree generator as:
+
+```text
+--num_trees
+```
+
+This controls how many guide trees are requested for polytomies with more than three direct alignment units.
+
+By default, the pipeline requests **4** guide trees for such nodes unless specified otherwise.
+
+Under strict distance thresholds, the generator may not always be able to find the requested number of mutually distant guide trees. In that case, it returns the largest valid set it can find under the current constraints.
+
 Example:
 
 ```bash
 --guide-num-trees 4
 ```
 
-`--guide-model`  
-Passed through to the guide-tree generator as `--model`. Choices: `uniform` or `yule`.  
+---
+
+#### `--guide-model`
+
+Passed through to the guide-tree generator as:
+
+```text
+--model
+```
+
+Choices:
+
+```text
+uniform
+yule
+```
+
 Example:
 
 ```bash
 --guide-model yule
 ```
 
-`--guide-rf-threshold`  
-Passed through to the guide-tree generator as `--rf-threshold`. This sets the minimum normalized Robinson–Foulds (RF) distance required between pairwise guide trees. The default is `1`, corresponding to the strict setting.  
+---
+
+#### `--guide-rf-threshold`
+
+Passed through to the guide-tree generator as:
+
+```text
+--rf-threshold
+```
+
+This sets the minimum normalized Robinson-Foulds (RF) distance required between pairwise guide trees.
+
+The strict setting is:
+
+```text
+1
+```
+
 Example:
 
 ```bash
 --guide-rf-threshold 0.8
 ```
 
-`--guide-t-threshold`  
-Passed through to the guide-tree generator as `--t-threshold`. This sets the minimum normalized triplet distance required between pairwise guide trees. The default is `2/3`.  
+---
+
+#### `--guide-t-threshold`
+
+Passed through to the guide-tree generator as:
+
+```text
+--t-threshold
+```
+
+This sets the minimum normalized triplet distance required between pairwise guide trees.
+
+The strict setting is:
+
+```text
+2/3
+```
+
 Example:
 
 ```bash
 --guide-t-threshold 0.6
 ```
 
-`--guide-max-tries`  
-Passed through to the guide-tree generator as `--max-tries`.  
+---
+
+#### `--guide-max-tries`
+
+Passed through to the guide-tree generator as:
+
+```text
+--max-tries
+```
+
 Example:
 
 ```bash
 --guide-max-tries 200000
 ```
 
-`--guide-restarts`  
-Passed through to the guide-tree generator as `--restarts`.  
+---
+
+#### `--guide-restarts`
+
+Passed through to the guide-tree generator as:
+
+```text
+--restarts
+```
+
 Example:
 
 ```bash
 --guide-restarts 10
 ```
 
-`--guide-seed`  
-Passed through to the guide-tree generator as `--seed`.  
+---
+
+#### `--guide-seed`
+
+Passed through to the guide-tree generator as:
+
+```text
+--seed
+```
+
 Example:
 
 ```bash
 --guide-seed 12345
 ```
 
-`--pipeline`  
-Path to `RunPipelineUseThis.sh`. Usually you do not need to change this.  
+---
+
+#### `--reference-selector`
+
+Used only with:
+
+```bash
+--noFixedRef 1
+```
+
+This specifies the path to:
+
+```text
+select_longest_reference.py
+```
+
+The script examines the genomes directly participating in a consensus task and returns the genome with the greatest total FASTA sequence length.
+
+By default, `make_plan.sh` uses the copy located in the same directory as `plan_noFixedRef.py`, so users normally do not need to specify this option.
+
 Example:
 
 ```bash
---pipeline ${ConsensusExtractionPATH}/RunPipelineUseThis.sh
+--reference-selector ${ConsensusExtractionPATH}/select_longest_reference.py
 ```
 
-`--ModelFile`  
-Path to `tryMLstartree.mod`. If omitted, the script uses the copy in the repository directory by default.  
+This option should not be used in the fixed-global-reference mode.
+
+---
+
+#### `--ModelFile`
+
+Path to:
+
+```text
+tryMLstartree.mod
+```
+
+If omitted, the copy in the repository directory is used by default.
+
 Example:
 
 ```bash
 --ModelFile ${ConsensusExtractionPATH}/tryMLstartree.mod
 ```
 
-`--sep_length`  
-Passed through to `RunPipelineUseThis.sh`. Used when very long chromosome MAFs need to be split into chunks.  
+---
+
+#### `--sep_length`
+
+Passed through to `RunPipelineUseThis.sh`.
+
+It specifies the chunk length used when long chromosome MAF files need to be divided into smaller coordinate intervals.
+
 Example:
 
 ```bash
 --sep_length 218505
 ```
 
-`--chrom_length_threshold`  
-Passed through to `RunPipelineUseThis.sh`. Chromosomes longer than this threshold will be split.  
+---
+
+#### `--chrom_length_threshold`
+
+Passed through to `RunPipelineUseThis.sh`.
+
+Reference sequences longer than this threshold are divided into chunks before consensus extraction.
+
 Example:
 
 ```bash
 --chrom_length_threshold 15819469
 ```
 
-`--global_num`  
-Passed through to `RunPipelineUseThis.sh`. Number of internal subsegments used by one consensus-extraction program.  
+---
+
+#### `--global_num`
+
+Passed through to `RunPipelineUseThis.sh`.
+
+This specifies the number of internal subsegments used by one consensus-extraction program.
+
 Example:
 
 ```bash
 --global_num 40
 ```
 
-`--separate_workers`  
-Passed through to `RunPipelineUseThis.sh`. CPUs used by the internal `separate()` stage.  
+---
+
+#### `--separate_workers`
+
+Passed through to `RunPipelineUseThis.sh`.
+
+This specifies the number of CPUs used by the internal `separate()` stage of one consensus-extraction program.
+
 Example:
 
 ```bash
 --separate_workers 4
 ```
 
+---
+
 ### 2.6 Guide-tree generation in the main workflow
 
-In the main workflow, guide-tree generation is handled automatically during the planning step by `make_plan.sh`. After planning finishes, the generated guide trees and the corresponding downstream commands are already written into the output directory, so users usually do not need to run the guide-tree generator manually.
+Guide-tree generation is handled automatically during the planning step by `make_plan.sh`.
+
+After planning finishes, the guide-tree-specific alignment files and the corresponding downstream commands are already written into the output directory, so users normally do not need to run the guide-tree generator manually.
 
 The default strategy is:
 
-- for a polytomy with exactly **three ingroup units**, the pipeline uses **all three rooted triples**;
-- for a polytomy with **more than three ingroup units**, the pipeline generates **fully resolved binary guide trees automatically**, using **4** guide trees by default.
+- for a polytomy with exactly **three direct alignment units**, the pipeline uses **all three binary topologies**;
+- for a polytomy with **more than three direct alignment units**, the pipeline generates fully resolved binary guide trees automatically;
+- **4 guide trees** are requested by default for such larger polytomies.
 
-Guide-tree generation for nodes with more than three ingroup units is performed by the script `generate_random_guidetrees_2models_2modes_finalver.py`.
+Guide trees for larger polytomies are generated by:
+
+```text
+generate_random_guidetrees_2models_2modes_finalver.py
+```
 
 Under the default strict setting:
 
-- the normalized Robinson–Foulds (RF) distance between any two guide trees is required to be **1**;
-- the normalized triplet distance between any two guide trees is required to be at least **2/3**;
+- the normalized Robinson-Foulds (RF) distance between any two accepted guide trees is required to be **1**;
+- the normalized triplet distance between any two accepted guide trees is required to be at least **2/3**;
 - guide trees are sampled under the **`yule`** model.
 
-These settings can be passed globally to `make_plan.sh`, for example:
+These settings can be passed globally through `make_plan.sh`.
+
+For example, in the default fixed-global-reference mode:
 
 ```bash
 bash ${ConsensusExtractionPATH}/make_plan.sh \
@@ -430,34 +971,65 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
   --guide-t-threshold 0.6666667
 ```
 
-By default, these guide-tree-generation settings are applied **globally** across the hierarchical workflow, rather than specified separately for each level or subproblem.
+The same guide-tree-generation options can also be used in no-fixed-reference mode:
 
-In practice, under strict thresholds, the generator may not always find the requested number of mutually distant guide trees. In such cases, it returns the **largest valid set** it can find under the current constraints. If users want more guide trees or a less restrictive search, they can relax the distance thresholds or adjust related generator parameters.
+```bash
+bash ${ConsensusExtractionPATH}/make_plan.sh \
+  --tree-file aln.tre \
+  --noFixedRef 1 \
+  --final_reference A \
+  --paths aln.txt \
+  --threads 60 \
+  --common_workers 15 \
+  --guide-num-trees 4 \
+  --guide-model yule \
+  --guide-rf-threshold 1 \
+  --guide-t-threshold 0.6666667
+```
+
+In `--noFixedRef 1` mode, the local reference selected for each consensus task is independent of guide-tree generation. In particular, the selected local reference is **not treated as an outgroup in the guide trees** and does not constrain the guide-tree topology. Guide trees are generated from the unresolved direct alignment units without fixing the selected local reference outside the sampled topology.
+
+The local reference is used only where a coordinate reference is required, including:
+
+- `cactus-hal2maf --refGenome`;
+- consensus-column extraction through `RunPipelineUseThis.sh --reference`.
+
+Therefore, in no-fixed-reference mode, the role of the local reference is purely to provide a common coordinate system for MAF export and consensus extraction. It does not determine the guide-tree topology and does not act as a guide-tree outgroup.
+
+By default, guide-tree-generation options supplied to `make_plan.sh` are applied globally across the hierarchical workflow rather than configured separately for each unresolved node.
 
 Users may modify:
 
-- `--guide-num-trees` to change how many guide trees are requested for polytomies with more than three ingroup units;
+- `--guide-num-trees` to change how many guide trees are requested for polytomies with more than three direct alignment units;
 - `--guide-model` to choose the tree-generation model (`yule` or `uniform`);
 - `--guide-rf-threshold` to change the minimum normalized RF distance;
 - `--guide-t-threshold` to change the minimum normalized triplet distance;
-- `--guide-max-tries`, `--guide-restarts`, and `--guide-seed` to control the search behavior.
+- `--guide-max-tries` to change the maximum number of sampling attempts;
+- `--guide-restarts` to change the number of search restarts;
+- `--guide-seed` to set the random seed.
 
-If users want to use different guide-tree-generation settings for specific levels or unresolved nodes, they can run the relevant generator commands separately and then edit or rerun the corresponding commands in the planning output manually.
+Under strict thresholds, the generator may not always find the requested number of mutually distant guide trees. In such cases, it returns the **largest valid set** it can find under the current constraints.
 
-#### Run the guide-tree generator directly for level-specific guide-tree settings
+If different guide-tree-generation settings are required for individual levels or unresolved nodes, users can run the guide-tree generator separately and modify the corresponding generated planning files or commands.
 
-Users may run the guide-tree generator directly when different alignment levels or unresolved nodes need different numbers of guide trees or different guide-tree-generation settings.
+#### Run the guide-tree generator directly
 
-Suppose the taxa are `A B C D E F`.
+Users may run the generator directly when different alignment levels or unresolved nodes require different numbers of guide trees or different tree-generation settings.
 
-Using the default settings:
+Suppose the direct alignment units are:
+
+```text
+A B C D E F
+```
+
+Using the generator defaults:
 
 ```bash
 python generate_random_guidetrees_2models_2modes_finalver.py \
-  --taxa A B C D E F \
+  --taxa A B C D E F
 ```
 
-If you want to relax the distance constraints, use the `uniform` model, fix `(A,B)` and `(C,D)` as cherries in all guide trees, and generate 6 guide trees:
+To relax the distance constraints, use the `uniform` model, constrain `(A,B)` and `(C,D)` to remain grouped, and request six guide trees:
 
 ```bash
 python generate_random_guidetrees_2models_2modes_finalver.py \
@@ -468,14 +1040,19 @@ python generate_random_guidetrees_2models_2modes_finalver.py \
   --t-threshold 0.6
 ```
 
-When `--outgroup` is provided, the outgroup will be fixed outside the sampled ingroup topology. 
-```
+When an outgroup is explicitly supplied to the guide-tree generator:
+
+```bash
 python generate_random_guidetrees_2models_2modes_finalver.py \
   --taxa A B C D E F \
   --outgroup G
 ```
 
-Here, the `taxa` passed to the guide-tree generator refers to unresolved direct alignment elements. If some taxa are constrained to remain grouped together in all guide trees, such as fixed cherries, they are treated as one element.
+the outgroup is fixed outside the sampled ingroup topology.
+
+This behavior is different from the automatically selected local reference in `--noFixedRef 1` mode. A local reference selected by `plan_noFixedRef.py` is **not automatically passed to the guide-tree generator as an outgroup**.
+
+The `taxa` supplied to the guide-tree generator represent the unresolved **direct alignment units**. If some taxa are constrained to remain grouped together in every guide tree, such as fixed cherries, they are treated as a single alignment unit for guide-tree generation.
 
 The above workflow is the **genome-start workflow**.
 
