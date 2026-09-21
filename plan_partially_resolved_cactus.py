@@ -1182,7 +1182,7 @@ class Planner:
             raise RuntimeError("Root task has not been planned yet")
         jobstore = self.root_task.folder / f"jobstorehal2maf_{self.root_task.name}_allTaxa"
         return (
-            f"cactus-hal2maf --dupeMode single --chunkSize 500000 "
+            f"cactus-hal2maf --outType single --chunkSize 500000 "
             f"--refGenome {shlex.quote(self.reference)} --noAncestors "
             f"{self.render_run_path(jobstore)} {self.render_run_path(self.root_alltaxa_hal())} "
             f"{self.render_run_path(self.root_alltaxa_maf())}"
@@ -1308,7 +1308,7 @@ class Planner:
             jobstore_hal2maf = task.folder / f"jobstorehal2maf_{task.name}_aln{i}"
             cmd1 = f"cactus {self.render_run_path(jobstore)} {self.render_run_path(aln_txt)} {self.render_run_path(hal)}"
             cmd2 = (
-                f"cactus-hal2maf --dupeMode single --chunkSize 500000 "
+                f"cactus-hal2maf --outType single --chunkSize 500000 "
                 f"--refGenome {shlex.quote(self.reference)} --noAncestors "
                 f"{self.render_run_path(jobstore_hal2maf)} {self.render_run_path(hal)} {self.render_run_path(maf)}"
             )
