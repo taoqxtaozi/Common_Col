@@ -2,6 +2,11 @@
 set -euo pipefail
 shopt -s nullglob
 
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 patched_halWriteNucleotides="$script_dir/tool_used/bin/halWriteNucleotides"
@@ -44,7 +49,10 @@ Required arguments:
   --reference             Reference taxon name used to reorder blocks, extract consensus columns, and place the reference first in the final FASTA output.
   --pre                   Output prefix. Main outputs will be generated as <pre>.maf, <pre>.fasta, and <pre>.hal.
   --threads               Total CPU budget available on the machine.
-  --common_workers        CPUs used by one consensus-extraction program. common_workers must be <= threads.
+  --common_workers        CPUs used by one consensus-extraction program.
+                           The maximum number of chromosome-level ancestor-inference
+                           jobs run in parallel is floor(threads / common_workers).
+                           common_workers must be <= threads.
   --genome_path           Two-column file: TAXON GENOME_PATH. Extra taxa not present in the final alignment will be ignored.
 
 Optional arguments:
@@ -95,7 +103,6 @@ Notes:
       - add_ance2mafwithN.py
       - check_if_maf_contain_all_taxachrom.py
       - replace_ancestor_seq_in_maf.py
-      - sep_file/1.sh
   * add_ance2mafwithN.py is expected to support the fifth argument:
       python add_ance2mafwithN.py input.maf output.maf AncName SeqName RefGenome.fa
     so that per-chromosome ancestor rows are named AncName.SeqName and
@@ -116,6 +123,7 @@ Notes:
   * common_workers is the CPU usage of one consensus-extraction program.
   * If threads=20, a practical choice for common_workers is often 10 or 15.
   * The maximum number of consensus jobs run in parallel is floor(threads / common_workers).
+  * The maximum number of chromosome-level ancestor-inference jobs run in parallel is also floor(threads / common_workers).
   * The long-chromosome splitting scripts are treated as ~1 CPU jobs, so up to threads of them may run in parallel.
 USAGEEOF
 }
@@ -128,8 +136,9 @@ run_parallel_commands() {
     local max_jobs="$1"
     shift
     local -a cmds=("$@")
-    local -a pids=()
     local fail=0
+    local status_dir
+    local idx=0
 
     if (( ${#cmds[@]} == 0 )); then
         return 0
@@ -139,20 +148,34 @@ run_parallel_commands() {
         max_jobs=1
     fi
 
+    status_dir=$(mktemp -d)
+
     for cmd in "${cmds[@]}"; do
         while (( $(jobs -rp | wc -l) >= max_jobs )); do
             sleep 1
         done
 
-        bash -euo pipefail -c "$cmd" &
-        pids+=("$!")
+        idx=$((idx + 1))
+        (
+            set +e
+            bash -euo pipefail -c "$cmd"
+            rc=$?
+            echo "$rc" > "$status_dir/$idx.rc"
+            exit 0
+        ) &
     done
 
-    for pid in "${pids[@]}"; do
-        if ! wait "$pid"; then
+    wait
+
+    for rc_file in "$status_dir"/*.rc; do
+        [[ -e "$rc_file" ]] || continue
+        rc=$(cat "$rc_file")
+        if [[ "$rc" != "0" ]]; then
             fail=1
         fi
     done
+
+    rm -rf "$status_dir"
 
     if (( fail != 0 )); then
         echo "Error: at least one parallel job failed."
@@ -499,11 +522,6 @@ if [[ ! -f "$script_dir/replace_ancestor_seq_in_maf.py" ]]; then
     exit 1
 fi
 
-if [[ ! -f "$script_dir/sep_file/1.sh" ]]; then
-    echo "Error: sep_file/1.sh not found in script directory."
-    exit 1
-fi
-
 if ! command -v conda >/dev/null 2>&1; then
     echo "Error: conda not found."
     exit 1
@@ -548,64 +566,65 @@ done
 run_parallel_commands "$threads" "${preprocess_cmds[@]}"
 
 ############################
+############################
 # 6. Prepare intermediate directories in the working directory
 ############################
 mkdir -p "$work_dir/common_command_files"
 mkdir -p "$work_dir/common_output_files"
-mkdir -p "$work_dir/sep"
+
+# Record chromosome MAFs that need coordinate splitting.
+# Keep an explicit count because Bash 4.2 + `set -u` can treat expansion of
+# an empty array (e.g. "${long_chroms[@]}") as an unbound-variable error.
+long_chroms=()
+long_chrom_count=0
 
 ############################
-# 7. Use the directory generated from the last input file as the template,
-#    iterate through each chromosome MAF in that directory,
-#    and determine whether further splitting is needed
+# 7. Use the directory generated from the last input file as the template.
+#    For long chromosomes, prepare consensus commands for all expected chunks.
+#    The actual chunk files will be generated later by
+#    seperate_maffile_by_index.py, which scans each chromosome MAF
+#    only once and writes all chunks in one run.
 ############################
-cd "$work_dir/sep" || exit 1
-
 for i in "$work_dir/${last_dir}"/*.maf
 do
     [ -e "$i" ] || continue
 
     head_chrom=$(basename "$i" .maf)
+
+    # srcSize of the first reference s-line.
+    # This is the total reference chromosome/sequence length.
     length=$(awk '$1=="s"{print $6; exit}' "$i")
 
     mkdir -p "$work_dir/common_command_files/${head_chrom}"
     mkdir -p "$work_dir/common_output_files/${head_chrom}"
 
     if (( length > chrom_length_threshold )); then
-        subdir="$work_dir/sep/sep_${head_chrom}"
-        mkdir -p "$subdir" "$work_dir/sep/${head_chrom}"
-        cd "$subdir" || exit 1
+
+        # Remember this chromosome so that every input alignment can be
+        # split once in Step 9.
+        long_chroms[$long_chrom_count]="$head_chrom"
+        long_chrom_count=$((long_chrom_count + 1))
 
         num=$(( (length + sep_length - 1) / sep_length ))
 
+        echo "Long chromosome detected: ${head_chrom}"
+        echo "  Reference length: ${length}"
+        echo "  Chunk length: ${sep_length}"
+        echo "  Number of chunks: ${num}"
+
+        # Prepare the downstream consensus command corresponding to
+        # every chunk that the faster splitter will generate.
         for n in $(seq 1 "$num")
         do
             start=$(( (n - 1) * sep_length ))
             end=$(( n * sep_length ))
-            if (( end > length )); then
-                end=$length
-            fi
 
-            cat > "${n}.sh" <<EOF
-#!/bin/bash
-set -euo pipefail
-mkdir -p "../${head_chrom}"
-python "$script_dir/seperate_maffile_by_index.py" "../${head_chrom}.maf" "${n}" "${start}" "${end}" "../${head_chrom}"
-EOF
-            chmod +x "${n}.sh"
-        done
-
-        cd "$work_dir/sep" || exit 1
-
-        for n in $(seq 1 "$num")
-        do
-            start=$(( (n - 1) * sep_length ))
-            end=$(( n * sep_length ))
             if (( end > length )); then
                 end=$length
             fi
 
             input_args=""
+
             for file in "${inputs[@]}"
             do
                 d=$(basename "$file" .maf)
@@ -617,7 +636,10 @@ EOF
         done
 
     else
+
+        # Short chromosomes are not split.
         input_args=""
+
         for file in "${inputs[@]}"
         do
             d=$(basename "$file" .maf)
@@ -629,47 +651,65 @@ EOF
     fi
 done
 
-cd "$work_dir" || exit 1
+############################
+# 8. No separate script-copying stage is needed anymore.
+#
+# The old variant generated hundreds of small shell scripts under sep_<chrom>
+# and copied them into every input directory.
+#
+# The faster splitter instead handles one whole chromosome MAF per invocation.
+############################
 
 ############################
-# 8. Copy the generated sep_<chrom> directories under sep/
-#    into each input directory
-############################
-for file in "${inputs[@]}"
-do
-    dir=$(basename "$file" .maf)
-
-    for sep_dir in "$work_dir"/sep/*
-    do
-        [ -d "$sep_dir" ] || continue
-        base_sep=$(basename "$sep_dir")
-        rm -rf "$work_dir/$dir/$base_sep"
-        cp -r "$sep_dir" "$work_dir/$dir"/
-    done
-done
-
-############################
-# 9. Execute the chunking scripts in parallel
+# 9. Split each long chromosome MAF in parallel.
+#
+# IMPORTANT:
+# One Python process now handles ONE chromosome MAF:
+#
+#     input chromosome MAF
+#         -> scan once
+#         -> generate all coordinate chunks
+#
+# Usage expected from seperate_maffile_by_index.py:
+#
+#     python seperate_maffile_by_index.py INPUT_MAF SEP_LENGTH OUTPUT_DIR
+#
+# Up to --threads chromosome-level splitting jobs may run simultaneously.
 ############################
 split_job_cmds=()
 
-for file in "${inputs[@]}"
-do
-    dir=$(basename "$file" .maf)
-
-    for sep_dir in "$work_dir/$dir"/sep_*
+# If every reference sequence is shorter than --chrom_length_threshold,
+# long_chrom_count remains 0. In that case Step 9 is skipped entirely.
+if (( long_chrom_count > 0 )); then
+    for file in "${inputs[@]}"
     do
-        [ -d "$sep_dir" ] || continue
-        for f in "$sep_dir"/*.sh
+        dir=$(basename "$file" .maf)
+
+        for (( k=0; k<long_chrom_count; k++ ))
         do
-            [ -e "$f" ] || continue
-            fname=$(basename "$f")
-            split_job_cmds+=("cd \"$sep_dir\" && bash \"$fname\"")
+            head_chrom="${long_chroms[$k]}"
+            input_maf="$work_dir/$dir/${head_chrom}.maf"
+            output_chunk_dir="$work_dir/$dir/${head_chrom}"
+
+            if [[ ! -f "$input_maf" ]]; then
+                echo "Error: chromosome MAF not found: $input_maf"
+                exit 1
+            fi
+
+            split_job_cmds+=(
+                "mkdir -p \"$output_chunk_dir\" && python \"$script_dir/seperate_maffile_by_index.py\" \"$input_maf\" \"$sep_length\" \"$output_chunk_dir\""
+            )
         done
     done
-done
+fi
 
-run_parallel_commands "$threads" "${split_job_cmds[@]}"
+if (( ${#split_job_cmds[@]} > 0 )); then
+    echo "Starting faster chromosome splitting."
+    echo "Number of chromosome-level splitting jobs: ${#split_job_cmds[@]}"
+    echo "Maximum simultaneous splitting jobs: ${threads}"
+
+    run_parallel_commands "$threads" "${split_job_cmds[@]}"
+fi
 
 ############################
 # 10. Execute the commands in common_command_files in parallel
@@ -678,6 +718,14 @@ run_parallel_commands "$threads" "${split_job_cmds[@]}"
 max_common_jobs=$(( threads / common_workers ))
 if (( max_common_jobs < 1 )); then
     max_common_jobs=1
+fi
+
+# Use the same CPU-budget logic for chromosome-level ancestor inference.
+# Example: threads=80 and common_workers=5 -> at most 16 chromosome jobs
+# run simultaneously in each ancestor-inference round.
+max_ancestor_jobs=$(( threads / common_workers ))
+if (( max_ancestor_jobs < 1 )); then
+    max_ancestor_jobs=1
 fi
 
 common_job_cmds=()
@@ -693,9 +741,10 @@ do
     done
 done
 
-run_parallel_commands "$max_common_jobs" "${common_job_cmds[@]}"
+if (( ${#common_job_cmds[@]} > 0 )); then
+    run_parallel_commands "$max_common_jobs" "${common_job_cmds[@]}"
+fi
 
-############################
 # 11. First merge part*.maf for each chromosome into <chrom>.maf
 ############################
 cd "$work_dir/common_output_files" || exit 1
@@ -1228,6 +1277,21 @@ run_per_chrom_direct_ancestor_branch() {
         "$branch_task_model_use_abs" \
         "$branch_task_jc69_root_abs"
 
+    ############################
+    # Parallel per-chromosome ancestor inference.
+    #
+    # All chromosomes use the same task-level model generated above.
+    # Each chromosome writes only to its own chromosome directory, so these
+    # jobs are independent and can safely run in parallel.
+    ############################
+
+    local direct_job_dir="$work_dir/ancestor_jobs/direct_${branch_ancestor_name}"
+    local -a direct_job_cmds=()
+    local job_script=""
+    local job_idx=0
+
+    mkdir -p "$direct_job_dir"
+
     while IFS= read -r chrom_added_maf_abs
     do
         [[ -n "$chrom_added_maf_abs" ]] || continue
@@ -1244,32 +1308,72 @@ run_per_chrom_direct_ancestor_branch() {
         chrom_fasta_abs="${chrom_dir}/${branch_ancestor_name}.${ref_seq_name}.fa"
         chrom_new_maf_abs="${chrom_prefix_abs}_new.maf"
 
-        echo "  Processing chromosome: ${chrom_name}"
-
-        "$patched_maf2hal" \
-            --refGenome "$branch_ancestor_name" \
-            "$chrom_added_maf_abs" \
-            "$chrom_hal_abs"
-
-        run_ancestors_and_hal2fasta_with_model \
-            "$chrom_hal_abs" \
-            "$branch_ancestor_name" \
-            "${branch_task_jc69_root_abs}.mod" \
-            "$chrom_tsv_abs" \
-            "$chrom_fasta_abs" \
-            "$chrom_jc69_root_abs"
-
-        python "$script_dir/replace_ancestor_seq_in_maf.py" \
-            "$chrom_added_maf_abs" \
-            "$branch_ancestor_name" \
-            "$chrom_fasta_abs" \
-            "$chrom_new_maf_abs" \
-            "$ref_seq_name"
-
+        # Record expected outputs in the parent shell before launching child jobs.
+        # Changes to arrays inside child processes would not propagate back.
         chrom_new_maf_files+=( "$chrom_new_maf_abs" )
         chrom_fasta_files+=( "$chrom_fasta_abs" )
 
+        job_idx=$((job_idx + 1))
+        job_script=$(printf '%s/job_%04d.sh' "$direct_job_dir" "$job_idx")
+
+        cat > "$job_script" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+echo "  [ancestor job ${job_idx}] Processing chromosome: ${chrom_name}"
+
+if [[ ! -s "${branch_task_jc69_root_abs}.mod" ]]; then
+    echo "Error: ancestor model file not found or empty: ${branch_task_jc69_root_abs}.mod" >&2
+    exit 1
+fi
+
+"$patched_maf2hal" \
+    --refGenome "$branch_ancestor_name" \
+    "$chrom_added_maf_abs" \
+    "$chrom_hal_abs"
+
+"$patched_ancestorsML" \
+    --printWrites \
+    "$chrom_hal_abs" \
+    "$branch_ancestor_name" \
+    "${branch_task_jc69_root_abs}.mod" \
+    > "$chrom_tsv_abs"
+
+env -u LD_LIBRARY_PATH \
+    "$patched_halWriteNucleotides" \
+    "$chrom_hal_abs" \
+    "$chrom_tsv_abs" \
+    > "${chrom_jc69_root_abs}_halWriteNucleotides.log"
+
+"$patched_hal2fasta" \
+    "$chrom_hal_abs" \
+    "$branch_ancestor_name" \
+    > "$chrom_fasta_abs"
+
+python "$script_dir/replace_ancestor_seq_in_maf.py" \
+    "$chrom_added_maf_abs" \
+    "$branch_ancestor_name" \
+    "$chrom_fasta_abs" \
+    "$chrom_new_maf_abs" \
+    "$ref_seq_name"
+
+echo "  [ancestor job ${job_idx}] Finished chromosome: ${chrom_name}"
+EOF
+
+        chmod +x "$job_script"
+        direct_job_cmds+=( "bash \"$job_script\"" )
+
     done < <(printf '%s\n' "${chrom_added_maf_files[@]}" | sort -V)
+
+    echo "Starting parallel chromosome-level ancestor inference."
+    echo "  Number of chromosome jobs: ${#direct_job_cmds[@]}"
+    echo "  Maximum simultaneous ancestor jobs: ${max_ancestor_jobs}"
+
+    if (( ${#direct_job_cmds[@]} > 0 )); then
+        run_parallel_commands "$max_ancestor_jobs" "${direct_job_cmds[@]}"
+    fi
+
+    echo "All chromosome-level ancestor inference jobs finished."
 
     local final_ancestor_maf_abs="${output_prefix_abs}_${branch_ancestor_name}_new.maf"
     local final_ancestor_checked_maf_abs="${output_prefix_abs}_${branch_ancestor_name}_new2.maf"
@@ -1455,6 +1559,23 @@ run_per_chrom_ref_outgroup_branch() {
         "$ingroup_task_model_use_abs" \
         "$ingroup_task_jc69_root_abs"
 
+    ############################
+    # Round 1:
+    # Parallel per-chromosome inference of the ingroup ancestor.
+    #
+    # Barrier rule:
+    # all ingroup chromosome jobs must finish before the top-level MAF is
+    # merged and the top-ancestor model is fitted.
+    ############################
+
+    local ingroup_job_dir="$work_dir/ancestor_jobs/ingroup_${ingroup_ancestor_name}"
+    local -a ingroup_job_cmds=()
+    local ingroup_job_script=""
+    local ingroup_job_idx=0
+    local other_taxa_string="${other_taxa[*]}"
+
+    mkdir -p "$ingroup_job_dir"
+
     while IFS= read -r ingroup_noref_maf_abs
     do
         [[ -n "$ingroup_noref_maf_abs" ]] || continue
@@ -1476,55 +1597,106 @@ run_per_chrom_ref_outgroup_branch() {
         ref_plus_ingroup_maf_abs="${chrom_prefix_abs}_new_noIngroup.maf"
         top_added_maf_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}.maf"
 
-        echo "  Processing chromosome: ${chrom_name}"
-
-        "$patched_maf2hal" \
-            --refGenome "$ingroup_ancestor_name" \
-            --targetGenomes "$target_genomes_csv" \
-            "$ingroup_noref_maf_abs" \
-            "$ingroup_hal_abs"
-
-        run_ancestors_and_hal2fasta_with_model \
-            "$ingroup_hal_abs" \
-            "$ingroup_ancestor_name" \
-            "${ingroup_task_jc69_root_abs}.mod" \
-            "$ingroup_tsv_abs" \
-            "$ingroup_fasta_abs" \
-            "$ingroup_jc69_root_abs"
-
-        # Step 3. Write the inferred ingroup ancestor sequence back to both
-        # the reference-containing and reference-excluded chromosome MAFs.
-        python "$script_dir/replace_ancestor_seq_in_maf.py" \
-            "$ingroup_added_maf_abs" \
-            "$ingroup_ancestor_name" \
-            "$ingroup_fasta_abs" \
-            "$ingroup_with_sequence_maf_abs" \
-            "$ref_seq_name"
-
-        python "$script_dir/replace_ancestor_seq_in_maf.py" \
-            "$ingroup_noref_maf_abs" \
-            "$ingroup_ancestor_name" \
-            "$ingroup_fasta_abs" \
-            "$ingroup_noref_new_maf_abs" \
-            "$ref_seq_name"
-
-        # Step 4. Keep only reference + ingroup ancestor, then add the top
-        # ancestor row as TopAncestor.chromName. These top-ancestor-added MAFs
-        # will be merged for task-level top model fitting.
-        remove_taxa_rows_from_maf "$ingroup_with_sequence_maf_abs" "$ref_plus_ingroup_maf_abs" "${other_taxa[@]}"
-
-        python "$script_dir/add_ance2mafwithN.py" \
-            "$ref_plus_ingroup_maf_abs" \
-            "$top_added_maf_abs" \
-            "$top_ancestor_name" \
-            "$ref_seq_name"
-
+        # Record expected outputs in the parent shell before launching jobs.
         ingroup_noref_new_maf_files+=( "$ingroup_noref_new_maf_abs" )
         ref_plus_ingroup_maf_files+=( "$ref_plus_ingroup_maf_abs" )
         top_added_maf_files+=( "$top_added_maf_abs" )
         ingroup_fasta_files+=( "$ingroup_fasta_abs" )
 
+        ingroup_job_idx=$((ingroup_job_idx + 1))
+        ingroup_job_script=$(printf '%s/job_%04d.sh' "$ingroup_job_dir" "$ingroup_job_idx")
+
+        cat > "$ingroup_job_script" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+echo "  [ingroup ancestor job ${ingroup_job_idx}] Processing chromosome: ${chrom_name}"
+
+if [[ ! -s "${ingroup_task_jc69_root_abs}.mod" ]]; then
+    echo "Error: ingroup ancestor model file not found or empty: ${ingroup_task_jc69_root_abs}.mod" >&2
+    exit 1
+fi
+
+"$patched_maf2hal" \
+    --refGenome "$ingroup_ancestor_name" \
+    --targetGenomes "$target_genomes_csv" \
+    "$ingroup_noref_maf_abs" \
+    "$ingroup_hal_abs"
+
+"$patched_ancestorsML" \
+    --printWrites \
+    "$ingroup_hal_abs" \
+    "$ingroup_ancestor_name" \
+    "${ingroup_task_jc69_root_abs}.mod" \
+    > "$ingroup_tsv_abs"
+
+env -u LD_LIBRARY_PATH \
+    "$patched_halWriteNucleotides" \
+    "$ingroup_hal_abs" \
+    "$ingroup_tsv_abs" \
+    > "${ingroup_jc69_root_abs}_halWriteNucleotides.log"
+
+"$patched_hal2fasta" \
+    "$ingroup_hal_abs" \
+    "$ingroup_ancestor_name" \
+    > "$ingroup_fasta_abs"
+
+# Write the inferred ingroup ancestor sequence back into the
+# reference-containing chromosome MAF.
+python "$script_dir/replace_ancestor_seq_in_maf.py" \
+    "$ingroup_added_maf_abs" \
+    "$ingroup_ancestor_name" \
+    "$ingroup_fasta_abs" \
+    "$ingroup_with_sequence_maf_abs" \
+    "$ref_seq_name"
+
+# Also write it back into the reference-excluded chromosome MAF.
+python "$script_dir/replace_ancestor_seq_in_maf.py" \
+    "$ingroup_noref_maf_abs" \
+    "$ingroup_ancestor_name" \
+    "$ingroup_fasta_abs" \
+    "$ingroup_noref_new_maf_abs" \
+    "$ref_seq_name"
+
+# Keep reference + ingroup ancestor only.
+LC_ALL=C awk -v taxa="$other_taxa_string" '
+BEGIN {
+    n=split(taxa,a," ")
+    for(i=1;i<=n;i++) {
+        if(a[i] != "") remove[a[i]]=1
+    }
+}
+\$1 ~ /^(s|i|e|q)\$/ {
+    split(\$2,b,".")
+    if(remove[b[1]]) next
+}
+{print}
+' "$ingroup_with_sequence_maf_abs" > "$ref_plus_ingroup_maf_abs"
+
+# Add the top ancestor placeholder row.
+python "$script_dir/add_ance2mafwithN.py" \
+    "$ref_plus_ingroup_maf_abs" \
+    "$top_added_maf_abs" \
+    "$top_ancestor_name" \
+    "$ref_seq_name"
+
+echo "  [ingroup ancestor job ${ingroup_job_idx}] Finished chromosome: ${chrom_name}"
+EOF
+
+        chmod +x "$ingroup_job_script"
+        ingroup_job_cmds+=( "bash \"$ingroup_job_script\"" )
+
     done < <(printf '%s\n' "${ingroup_noref_maf_files[@]}" | sort -V)
+
+    echo "Starting parallel ingroup-ancestor inference."
+    echo "  Number of chromosome jobs: ${#ingroup_job_cmds[@]}"
+    echo "  Maximum simultaneous ancestor jobs: ${max_ancestor_jobs}"
+
+    if (( ${#ingroup_job_cmds[@]} > 0 )); then
+        run_parallel_commands "$max_ancestor_jobs" "${ingroup_job_cmds[@]}"
+    fi
+
+    echo "All ingroup-ancestor chromosome jobs finished."
 
     top_task_added_maf_abs="${output_prefix_abs}_${ingroup_ancestor_name}_new_noIngroup_${top_ancestor_name}.maf"
     merge_maf_files "$top_task_added_maf_abs" "${top_added_maf_files[@]}"
@@ -1536,6 +1708,21 @@ run_per_chrom_ref_outgroup_branch() {
         "$top_task_added_maf_abs" \
         "$top_task_model_use_abs" \
         "$top_task_jc69_root_abs"
+
+    ############################
+    # Round 2:
+    # Parallel per-chromosome inference of the top ancestor.
+    #
+    # This round starts only after every Round-1 chromosome job has finished
+    # and the shared top-ancestor model has been generated.
+    ############################
+
+    local top_job_dir="$work_dir/ancestor_jobs/top_${top_ancestor_name}"
+    local -a top_job_cmds=()
+    local top_job_script=""
+    local top_job_idx=0
+
+    mkdir -p "$top_job_dir"
 
     while IFS= read -r top_added_maf_abs
     do
@@ -1554,34 +1741,71 @@ run_per_chrom_ref_outgroup_branch() {
         top_fasta_abs="${chrom_dir}/${top_ancestor_name}.${ref_seq_name}.fa"
         top_noingroup_new_maf_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}_new.maf"
 
-        echo "  Processing chromosome for top ancestor: ${chrom_name}"
-
-        "$patched_maf2hal" \
-            --refGenome "$top_ancestor_name" \
-            "$top_added_maf_abs" \
-            "$top_hal_abs"
-
-        run_ancestors_and_hal2fasta_with_model \
-            "$top_hal_abs" \
-            "$top_ancestor_name" \
-            "${top_task_jc69_root_abs}.mod" \
-            "$top_tsv_abs" \
-            "$top_fasta_abs" \
-            "$top_jc69_root_abs"
-
-        # Step 5. Write the inferred top ancestor sequence back to the
-        # reference+ingroup-only top-level MAF.
-        python "$script_dir/replace_ancestor_seq_in_maf.py" \
-            "$top_added_maf_abs" \
-            "$top_ancestor_name" \
-            "$top_fasta_abs" \
-            "$top_noingroup_new_maf_abs" \
-            "$ref_seq_name"
-
+        # Record expected outputs in the parent shell before launching jobs.
         top_noingroup_new_maf_files+=( "$top_noingroup_new_maf_abs" )
         top_fasta_files+=( "$top_fasta_abs" )
 
+        top_job_idx=$((top_job_idx + 1))
+        top_job_script=$(printf '%s/job_%04d.sh' "$top_job_dir" "$top_job_idx")
+
+        cat > "$top_job_script" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+echo "  [top ancestor job ${top_job_idx}] Processing chromosome: ${chrom_name}"
+
+if [[ ! -s "${top_task_jc69_root_abs}.mod" ]]; then
+    echo "Error: top ancestor model file not found or empty: ${top_task_jc69_root_abs}.mod" >&2
+    exit 1
+fi
+
+"$patched_maf2hal" \
+    --refGenome "$top_ancestor_name" \
+    "$top_added_maf_abs" \
+    "$top_hal_abs"
+
+"$patched_ancestorsML" \
+    --printWrites \
+    "$top_hal_abs" \
+    "$top_ancestor_name" \
+    "${top_task_jc69_root_abs}.mod" \
+    > "$top_tsv_abs"
+
+env -u LD_LIBRARY_PATH \
+    "$patched_halWriteNucleotides" \
+    "$top_hal_abs" \
+    "$top_tsv_abs" \
+    > "${top_jc69_root_abs}_halWriteNucleotides.log"
+
+"$patched_hal2fasta" \
+    "$top_hal_abs" \
+    "$top_ancestor_name" \
+    > "$top_fasta_abs"
+
+python "$script_dir/replace_ancestor_seq_in_maf.py" \
+    "$top_added_maf_abs" \
+    "$top_ancestor_name" \
+    "$top_fasta_abs" \
+    "$top_noingroup_new_maf_abs" \
+    "$ref_seq_name"
+
+echo "  [top ancestor job ${top_job_idx}] Finished chromosome: ${chrom_name}"
+EOF
+
+        chmod +x "$top_job_script"
+        top_job_cmds+=( "bash \"$top_job_script\"" )
+
     done < <(printf '%s\n' "${top_added_maf_files[@]}" | sort -V)
+
+    echo "Starting parallel top-ancestor inference."
+    echo "  Number of chromosome jobs: ${#top_job_cmds[@]}"
+    echo "  Maximum simultaneous ancestor jobs: ${max_ancestor_jobs}"
+
+    if (( ${#top_job_cmds[@]} > 0 )); then
+        run_parallel_commands "$max_ancestor_jobs" "${top_job_cmds[@]}"
+    fi
+
+    echo "All top-ancestor chromosome jobs finished."
 
     local final_ingroup_maf_abs="${output_prefix_abs}_${ingroup_ancestor_name}_noref_new.maf"
     local final_ingroup_checked_maf_abs="${output_prefix_abs}_${ingroup_ancestor_name}_noref_new2.maf"
