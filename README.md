@@ -278,14 +278,6 @@ Example:
 --python python3
 ```
 
-`--planner`  
-Path to `plan_partially_resolved_cactus.py`. Usually you do not need to change this.  
-Example:
-
-```bash
---planner ${ConsensusExtractionPATH}/plan_partially_resolved_cactus.py
-```
-
 `--generator`  
 Path to `generate_random_guidetrees_2models_2modes_finalver.py`.  
 Example:
