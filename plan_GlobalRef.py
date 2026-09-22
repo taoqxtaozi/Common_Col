@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-plan_partially_resolved_cactus.py
+plan_GlobalRef.py
 
 A readable planner that:
 1. reads a rooted / meaningfully rooted Newick tree,
@@ -1202,9 +1202,21 @@ class Planner:
         """
         Write the finalization script.
 
-        This script is needed even when there are no descendant HALs to regraft,
-        because a fully fixed/binary root alignment still needs to be exported
-        from HAL to the final MAF and concatenated FASTA outputs.
+        Three cases are handled:
+
+        1. Regrafting is required:
+           build the final HAL by regrafting descendant HALs, then export
+           final MAF and FASTA from the final HAL.
+
+        2. No regrafting and the root task is a consensus task:
+           RunPipelineUseThis.sh already produces consensus.hal,
+           consensus.maf and consensus.fasta. These are copied as the final
+           alignment outputs.
+
+        3. No regrafting and the root task is a fixed task (e.g. a fully
+           binary tree):
+           the Cactus HAL is the final alignment. Final MAF and FASTA are
+           exported from this HAL.
         """
         regraft_tasks = self.final_regraft_tasks()
         script_path = self.root_alltaxa_script()
@@ -1214,41 +1226,61 @@ class Planner:
                 script_path.unlink()
             return None
 
-        bundled_hal_append_subtree = self.bundled_hal_append_subtree().resolve()
-
         with open(script_path, "w", encoding="utf-8") as fw:
             fw.write("#!/bin/bash\n")
             fw.write("set -euo pipefail\n\n")
-            fw.write("RUN_PATH=" + shlex.quote(str(self.outdir)) + "\n")
+            fw.write("RUN_PATH=" + shlex.quote(str(self.outdir)) + "\n\n")
+            fw.write(f'mkdir -p {self.render_run_path(self.final_output_dir())}\n\n')
 
             if regraft_tasks:
+                fw.write("# Regrafting workflow\n\n")
+                bundled_hal_append_subtree = self.bundled_hal_append_subtree().resolve()
                 fw.write("patched_halAppendSubtree=" + shlex.quote(str(bundled_hal_append_subtree)) + "\n\n")
-                fw.write('for exe in "$patched_halAppendSubtree"; do\n')
-                fw.write('    if [[ ! -f "$exe" ]]; then\n')
-                fw.write('        echo "Error: bundled executable not found: $exe"\n')
-                fw.write("        exit 1\n")
-                fw.write("    fi\n")
-                fw.write('    chmod +x "$exe"\n')
-                fw.write('    if [[ ! -x "$exe" ]]; then\n')
-                fw.write('        echo "Error: bundled executable is still not executable: $exe"\n')
-                fw.write("        exit 1\n")
-                fw.write("    fi\n")
-                fw.write("done\n\n")
+                fw.write('if [[ ! -f "$patched_halAppendSubtree" ]]; then\n')
+                fw.write('    echo "Error: bundled executable not found: $patched_halAppendSubtree"\n')
+                fw.write("    exit 1\n")
+                fw.write("fi\n")
+                fw.write('chmod +x "$patched_halAppendSubtree"\n\n')
+                fw.write(f'root_alltaxa_hal="{self.render_run_path(self.root_alltaxa_hal())}"\n')
+                fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} "$root_alltaxa_hal"\n')
 
-            fw.write(f'root_alltaxa_hal="{self.render_run_path(self.root_alltaxa_hal())}"\n')
-            fw.write('# Copy the root-level primary HAL to a stable final-working name.\n')
-            fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} "$root_alltaxa_hal"\n')
+                for task in regraft_tasks:
+                    fw.write(self.regraft_cmd_for_script(self.root_alltaxa_hal(), task) + "\n")
 
-            for task in regraft_tasks:
-                fw.write(self.regraft_cmd_for_script(self.root_alltaxa_hal(), task) + "\n")
+                fw.write("\n")
+                fw.write(self.root_alltaxa_hal2maf_cmd() + "\n")
+                fw.write(self.root_alltaxa_fasta_cmd() + "\n\n")
+                fw.write(f'mv "$root_alltaxa_hal" {self.render_run_path(self.final_output_hal())}\n')
+                fw.write(f'mv {self.render_run_path(self.root_alltaxa_maf())} {self.render_run_path(self.final_output_maf())}\n')
+                fw.write(f'mv {self.render_run_path(self.root_alltaxa_fasta())} {self.render_run_path(self.final_output_fasta())}\n')
 
-            fw.write(self.root_alltaxa_hal2maf_cmd() + "\n")
-            fw.write(self.root_alltaxa_fasta_cmd() + "\n")
-            fw.write(f'mkdir -p {self.render_run_path(self.final_output_dir())}\n')
-            fw.write(f'mv "$root_alltaxa_hal" {self.render_run_path(self.final_output_hal())}\n')
-            fw.write(f'mv {self.render_run_path(self.root_alltaxa_maf())} {self.render_run_path(self.final_output_maf())}\n')
-            fw.write(f'mv {self.render_run_path(self.root_alltaxa_fasta())} {self.render_run_path(self.final_output_fasta())}\n')
-            fw.write(f'mv {self.render_run_path(self.root_task.output_fa)} {self.render_run_path(self.final_output_ancestor_fasta())}\n')
+            else:
+                if self.root_task.kind == "consensus":
+                    fw.write("# No regrafting. Consensus output from RunPipelineUseThis.sh is final.\n")
+                    fw.write("# Copy consensus HAL/MAF/FASTA as final alignment outputs.\n\n")
+                    fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} {self.render_run_path(self.final_output_hal())}\n')
+                    fw.write(f'cp {self.render_run_path(self.task_primary_maf(self.root_task))} {self.render_run_path(self.final_output_maf())}\n')
+                    fw.write(f'cp {self.render_run_path(self.task_primary_fasta(self.root_task))} {self.render_run_path(self.final_output_fasta())}\n')
+                else:
+                    fw.write("# No regrafting. Fixed Cactus HAL is the final alignment.\n")
+                    fw.write("# Export final MAF and FASTA from this HAL.\n\n")
+                    fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} {self.render_run_path(self.final_output_hal())}\n')
+                    fw.write(
+                        f'cactus-hal2maf --outType single --chunkSize 500000 '
+                        f'--refGenome {shlex.quote(self.reference)} --noAncestors '
+                        f'{self.render_run_path(self.root_task.folder / ("jobstorehal2maf_" + self.root_task.name + "_final") )} '
+                        f'{self.render_run_path(self.final_output_hal())} '
+                        f'{self.render_run_path(self.final_output_maf())}\n'
+                    )
+                    fw.write(self.root_alltaxa_fasta_cmd().replace(
+                        self.render_run_path(self.root_alltaxa_maf()),
+                        self.render_run_path(self.final_output_maf())
+                    ).replace(
+                        self.render_run_path(self.root_alltaxa_fasta()),
+                        self.render_run_path(self.final_output_fasta())
+                    ) + "\n")
+
+            fw.write(f'cp {self.render_run_path(self.root_task.output_fa)} {self.render_run_path(self.final_output_ancestor_fasta())}\n')
 
         script_path.chmod(0o755)
         return script_path
