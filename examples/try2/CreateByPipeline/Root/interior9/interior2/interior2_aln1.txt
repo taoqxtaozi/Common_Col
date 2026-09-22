@@ -1,3 +1,0 @@
-(MELUN,NESNO)interior2;
-MELUN /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/MELUN.fa
-NESNO /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/NESNO.fa

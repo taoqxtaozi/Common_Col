@@ -1,3 +1,0 @@
-(PHORU,PODCR)interior25;
-PHORU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/PHORU.fa
-PODCR /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try2/PODCR.fa
