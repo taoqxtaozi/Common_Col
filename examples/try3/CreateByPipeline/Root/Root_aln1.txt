@@ -1,6 +1,0 @@
-(GALGA,(CATAU,(CHLUN,(COLLI,MESUN)Anc_in1)Anc_in2)Anc_in3)Root;
-CATAU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/binary/CATAU.fa
-CHLUN /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/binary/CHLUN.fa
-COLLI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/binary/COLLI.fa
-GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/binary/GALGA.fa
-MESUN /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/binary/MESUN.fa
