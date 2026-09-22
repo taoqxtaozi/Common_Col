@@ -80,13 +80,16 @@ The main workflow supports two reference modes:
 2. **No-fixed-reference mode (`--noFixedRef 1`)**  
    No global reference is used during hierarchical planning. In this mode, `make_plan.sh` automatically uses `plan_noFixedRef.py`. The rooting of the input tree is preserved, and each consensus task independently selects the longest genome among the genomes directly participating in that task as its local reference. This local reference is used only where a coordinate reference is required, such as MAF export and consensus-column extraction for that task.
 
-   Because the final complete HAL-to-MAF export still requires a coordinate reference, this mode requires `--final_reference`. The final reference is used only for the final export and does not affect tree rooting, guide-tree generation, Progressive Cactus alignment, or per-task local-reference selection.
+   The final HAL-to-MAF export also requires a coordinate reference. This reference is automatically selected as the genome with the longest FASTA sequence length from the input genome path file.
+
+Users can modify this reference selection in the generated `finalization.sh` file if needed.
+
 
 In the default fixed-global-reference mode, the planner applies a conditional reference-rooting rule. If the input tree is fully binary, the pipeline plans a normal Progressive Cactus alignment run. If the tree is not fully binary but the reference is already a direct child of the input top root, the reference participates as a direct alignment element at the root-level task. In other non-binary cases, the tree is rerooted so that the reference becomes the top-level outgroup.
 
 In the no-fixed-reference mode, the input rooting is preserved and no reference-driven rerooting is performed.
 
-After the tree has been prepared according to the selected mode, the pipeline identifies unresolved regions and builds a hierarchical alignment workflow that proceeds from lower-level tasks to higher-level tasks.
+After the tree has been prepared according to the selected mode, the pipeline identifies unresolved nodes and builds a hierarchical alignment workflow that proceeds from lower-level tasks to higher-level tasks.
 
 At each unresolved internal node, the pipeline generates multiple guide-tree-specific alignments and combines them into a consensus alignment:
 
@@ -97,7 +100,7 @@ At each unresolved internal node, the pipeline generates multiple guide-tree-spe
 
 For each lower-level unresolved node, the pipeline extracts a consensus alignment from the corresponding guide-tree-specific alignments and infers an ancestor genome from that consensus. This inferred consensus ancestor is then used as an input genome for the next higher-level alignment step. The procedure continues hierarchically until the top level is reached.
 
-Finally, lower-level consensus HAL subtrees are regrafted into the root-level alignment.
+When required, lower-level consensus HAL subtrees are regrafted into the root-level alignment.
 
 **The pipeline outputs the final consensus alignment for all taxa in MAF, FASTA, and HAL format, together with the inferred root ancestor genome.**
 
@@ -146,16 +149,9 @@ D D.fa
    **No fixed global reference (`--noFixedRef 1`)**
 
    - do **not** provide `--reference`
-   - provide `--final_reference`
-   - each consensus task selects its own local reference automatically
-   - `--final_reference` is used only for the final complete HAL-to-MAF export
-   - the final reference taxon must occur in both the input tree and the `--paths` file
-
-   Example:
-
-   ```bash
-   --noFixedRef 1 --final_reference A
-   ```
+   - each polytomy selects its local reference automatically as the longest participating            genome;
+   - the final HAL-to-MAF export reference is automatically selected from the longest genome in      the input genome-path file. Users can modify this reference selection in the generated          `finalization.sh` file if needed.
+   
 
 4. **CPU settings**
    - `--threads`: total CPU budget available to the consensus-processing pipeline
@@ -214,7 +210,6 @@ For example:
 bash ${ConsensusExtractionPATH}/make_plan.sh \
   --tree-file aln.tre \
   --noFixedRef 1 \
-  --final_reference A \
   --paths aln.txt \
   --threads Num1 \
   --common_workers Num2
@@ -232,7 +227,6 @@ In this mode:
 - no reference is used to reroot the tree;
 - guide-tree generation does not depend on a reference;
 - each consensus task selects the longest directly participating genome as its local reference;
-- `--final_reference` is used only for the final complete HAL-to-MAF export.
 
 Users do not need to specify the planner manually.
 
@@ -269,7 +263,6 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
 bash ${ConsensusExtractionPATH}/make_plan.sh \
   --tree-file aln.tre \
   --noFixedRef 1 \
-  --final_reference A \
   --paths aln.txt \
   --threads 60 \
   --common_workers 15 \
@@ -282,7 +275,6 @@ bash ${ConsensusExtractionPATH}/make_plan.sh \
 bash ${ConsensusExtractionPATH}/make_plan.sh \
   --tree '(A,(B,C,D));' \
   --noFixedRef 1 \
-  --final_reference A \
   --paths aln.txt \
   --threads 60 \
   --common_workers 15
@@ -311,7 +303,6 @@ The same guide-tree options can also be used in no-fixed-reference mode:
 bash ${ConsensusExtractionPATH}/make_plan.sh \
   --tree-file aln.tre \
   --noFixedRef 1 \
-  --final_reference A \
   --paths aln.txt \
   --threads 60 \
   --common_workers 15 \
@@ -373,9 +364,8 @@ The `finalization.sh` script:
 
 1. copies the root-level primary HAL to a stable final-working HAL;
 2. regrafts lower-level consensus HAL subtrees when required;
-3. exports the complete final alignment to MAF;
-4. converts the final MAF to concatenated FASTA;
-5. moves the final outputs into `final_output/`.
+3. exports the final MAF and FASTA alignment;
+4. moves the final outputs into `final_output/`.
 
 **After all commands from `instruction.txt` have been completed, the main final outputs are written under `final_output/`.**
 
@@ -450,8 +440,7 @@ Default:
 - uses `plan_noFixedRef.py`;
 - does not use a global reference;
 - preserves the input rooting;
-- automatically selects a local reference for each consensus task;
-- requires `--final_reference` for the final complete HAL-to-MAF export.
+- automatically selects a local reference for each consensus task.
 
 Examples:
 
@@ -516,34 +505,6 @@ Example:
 ```
 
 It is used only in the fixed-global-reference mode.
-
----
-
-#### `--final_reference`
-
-Reference genome used only for the final complete HAL-to-MAF export in the no-fixed-reference mode.
-
-This option is required when:
-
-```bash
---noFixedRef 1
-```
-
-Example:
-
-```bash
---final_reference A
-```
-
-It does **not** affect:
-
-- input-tree rooting;
-- guide-tree generation;
-- Progressive Cactus alignment;
-- local-reference selection;
-- per-task consensus construction.
-
-Do not use `--final_reference` in the default fixed-global-reference mode.
 
 ---
 
@@ -842,7 +803,7 @@ This specifies the path to:
 select_longest_reference.py
 ```
 
-The script examines the genomes directly participating in a consensus task and returns the genome with the greatest total FASTA sequence length.
+The script examines the genomes directly participating in a consensus task and returns the genome with the longest total FASTA sequence length.
 
 By default, `make_plan.sh` uses the copy located in the same directory as `plan_noFixedRef.py`, so users normally do not need to specify this option.
 
@@ -977,7 +938,6 @@ The same guide-tree-generation options can also be used in no-fixed-reference mo
 bash ${ConsensusExtractionPATH}/make_plan.sh \
   --tree-file aln.tre \
   --noFixedRef 1 \
-  --final_reference A \
   --paths aln.txt \
   --threads 60 \
   --common_workers 15 \
