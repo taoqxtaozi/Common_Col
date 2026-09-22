@@ -1,3 +1,0 @@
-(CATAU,HALLE)interior12;
-CATAU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/CATAU.fa
-HALLE /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/HALLE.fa

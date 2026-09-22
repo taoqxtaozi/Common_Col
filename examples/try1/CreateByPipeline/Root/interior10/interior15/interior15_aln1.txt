@@ -1,7 +1,0 @@
-(GALGA,((BUCRH,(APAVI,PICPU)interior15_1)interior15_2,(MERNU,LEPDI)interior15_3)interior15)interior15_GALGA;
-APAVI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/APAVI.fa
-BUCRH /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/BUCRH.fa
-GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/GALGA.fa
-LEPDI /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/LEPDI.fa
-MERNU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/MERNU.fa
-PICPU /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/PICPU.fa

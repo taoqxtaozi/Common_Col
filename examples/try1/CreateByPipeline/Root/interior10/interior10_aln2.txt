@@ -1,7 +1,0 @@
-(GALGA,((((interior12,interior15)interior10_1,interior9)interior10_2,TYTAL)interior10_3,COLST)interior10)interior10_GALGA;
-COLST /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/COLST.fa
-GALGA /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/GALGA.fa
-TYTAL /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/TYTAL.fa
-interior12 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/Root/interior10/interior12/interior12.fa
-interior15 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/Root/interior10/interior15/interior15.fa
-interior9 /picb/phylcomb/taoqixin/cactus-bin-v2.9.2/evolverSimControl_100000long_43taxa_processLostChrom_usetaxadirectly/0530reroot/try1/Root/interior10/interior9/interior9.fa
