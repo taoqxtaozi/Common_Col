@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-plan_partially_resolved_cactus.py
+plan_noFixedRef.py
 
 Planner for hierarchical Cactus alignment of a rooted, partially resolved tree.
 
@@ -412,8 +412,9 @@ class Planner:
     def __init__(
         self,
         root: Node,
-        final_reference: str,
+        final_reference: Optional[str],
         taxon_paths: Dict[str, str],
+        paths_file: Path,
         outdir: Path,
         guide_params: GuideParams,
         pipeline_params: PipelineParams,
@@ -421,9 +422,11 @@ class Planner:
         self.root = root
         self.final_reference = final_reference
         self.taxon_paths = taxon_paths
+        self.paths_file = paths_file.resolve()
         self.outdir = outdir.resolve()
         self.guide_params = guide_params
         self.pipeline_params = pipeline_params
+        self.final_reference_was_user_provided = final_reference is not None
         self.tasks_by_name: Dict[str, Task] = {}
         self.root_task: Optional[Task] = None
 
@@ -774,6 +777,43 @@ class Planner:
 
         return mapping
 
+    def resolve_final_reference_for_single_task(self) -> None:
+        """
+        Resolve the final export reference when no explicit reference is provided.
+
+        In --noFixedRef mode, the final HAL-to-MAF export reference is selected
+        automatically as the longest genome from the original input path file.
+        This reference is only used for final export and does not affect guide
+        trees or consensus construction.
+        """
+        if self.final_reference is not None:
+            return
+
+        selector = self.pipeline_params.reference_selector
+        result = subprocess.run(
+            [
+                "python",
+                str(selector),
+                str(self.paths_file),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.final_reference = result.stdout.strip()
+
+    def is_single_level_polytomy_workflow(self) -> bool:
+        """
+        Return True only for a root-level polytomy whose direct children are all
+        leaves. This is the only case where the automatically selected reference
+        is also the consensus extraction reference and therefore does not need an
+        extra final-export note in instruction.txt.
+        """
+        return (
+            is_consensus_target(self.root)
+            and all(child.is_leaf() for child in self.root.children)
+        )
+
     def write_task_files(self, task: Task) -> None:
         task.folder.mkdir(parents=True, exist_ok=True)
 
@@ -934,9 +974,12 @@ class Planner:
         """
         Write the finalization script.
 
-        This script is needed even when there are no descendant HALs to regraft,
-        because a fully fixed/binary root alignment still needs to be exported
-        from HAL to the final MAF and concatenated FASTA outputs.
+        For workflows without regrafting, RunPipelineUseThis.sh already
+        produces the final consensus HAL/MAF/FASTA outputs. This script only
+        copies them into final_output with standardized names.
+
+        For workflows with regrafting, the final HAL is assembled first and
+        then exported to MAF and FASTA.
         """
         regraft_tasks = self.final_regraft_tasks()
         script_path = self.root_alltaxa_script()
@@ -946,48 +989,60 @@ class Planner:
                 script_path.unlink()
             return None
 
-        bundled_hal_append_subtree = self.bundled_hal_append_subtree().resolve()
-
         with open(script_path, "w", encoding="utf-8") as fw:
             fw.write("#!/bin/bash\n")
             fw.write("set -euo pipefail\n\n")
-            fw.write("RUN_PATH=" + shlex.quote(str(self.outdir)) + "\n")
-            fw.write(
-                "echo "
-                + shlex.quote(
-                    f"Final HAL-to-MAF export reference: {self.final_reference}"
-                )
-                + "\n"
-            )
+            fw.write("RUN_PATH=" + shlex.quote(str(self.outdir)) + "\n\n")
+            fw.write(f'mkdir -p {self.render_run_path(self.final_output_dir())}\n\n')
 
             if regraft_tasks:
-                fw.write("patched_halAppendSubtree=" + shlex.quote(str(bundled_hal_append_subtree)) + "\n\n")
-                fw.write('for exe in "$patched_halAppendSubtree"; do\n')
-                fw.write('    if [[ ! -f "$exe" ]]; then\n')
-                fw.write('        echo "Error: bundled executable not found: $exe"\n')
-                fw.write("        exit 1\n")
-                fw.write("    fi\n")
-                fw.write('    chmod +x "$exe"\n')
-                fw.write('    if [[ ! -x "$exe" ]]; then\n')
-                fw.write('        echo "Error: bundled executable is still not executable: $exe"\n')
-                fw.write("        exit 1\n")
-                fw.write("    fi\n")
-                fw.write("done\n\n")
+                fw.write("# Regrafting workflow\n\n")
+                bundled_hal_append_subtree = self.bundled_hal_append_subtree().resolve()
+                fw.write("patched_halAppendSubtree=" + shlex.quote(str(bundled_hal_append_subtree)) + "\n")
+                fw.write('if [[ ! -f "$patched_halAppendSubtree" ]]; then\n')
+                fw.write('    echo "Error: bundled executable not found"\n')
+                fw.write("    exit 1\n")
+                fw.write("fi\n")
+                fw.write('chmod +x "$patched_halAppendSubtree"\n\n')
 
-            fw.write(f'root_alltaxa_hal="{self.render_run_path(self.root_alltaxa_hal())}"\n')
-            fw.write('# Copy the root-level primary HAL to a stable final-working name.\n')
-            fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} "$root_alltaxa_hal"\n')
+                fw.write(f'root_alltaxa_hal="{self.render_run_path(self.root_alltaxa_hal())}"\n')
+                fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} "$root_alltaxa_hal"\n')
 
-            for task in regraft_tasks:
-                fw.write(self.regraft_cmd_for_script(self.root_alltaxa_hal(), task) + "\n")
+                for task in regraft_tasks:
+                    fw.write(self.regraft_cmd_for_script(self.root_alltaxa_hal(), task) + "\n")
 
-            fw.write(self.root_alltaxa_hal2maf_cmd() + "\n")
-            fw.write(self.root_alltaxa_fasta_cmd() + "\n")
-            fw.write(f'mkdir -p {self.render_run_path(self.final_output_dir())}\n')
-            fw.write(f'mv "$root_alltaxa_hal" {self.render_run_path(self.final_output_hal())}\n')
-            fw.write(f'mv {self.render_run_path(self.root_alltaxa_maf())} {self.render_run_path(self.final_output_maf())}\n')
-            fw.write(f'mv {self.render_run_path(self.root_alltaxa_fasta())} {self.render_run_path(self.final_output_fasta())}\n')
-            fw.write(f'mv {self.render_run_path(self.root_task.output_fa)} {self.render_run_path(self.final_output_ancestor_fasta())}\n')
+                fw.write("\n")
+                fw.write(self.root_alltaxa_hal2maf_cmd() + "\n")
+                fw.write(self.root_alltaxa_fasta_cmd() + "\n\n")
+
+                fw.write(f'mv {self.render_run_path(self.root_alltaxa_hal())} {self.render_run_path(self.final_output_hal())}\n')
+                fw.write(f'mv {self.render_run_path(self.root_alltaxa_maf())} {self.render_run_path(self.final_output_maf())}\n')
+                fw.write(f'mv {self.render_run_path(self.root_alltaxa_fasta())} {self.render_run_path(self.final_output_fasta())}\n')
+
+            else:
+                fw.write("# No regrafting is required. Final output handling depends on the root task type.\n\n")
+
+                if self.root_task.kind == "consensus":
+                    fw.write("# Root consensus task: RunPipelineUseThis.sh already produced the final consensus HAL/MAF/FASTA.\n")
+                    fw.write("# Only copy/rename outputs into final_output.\n\n")
+
+                    fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} {self.render_run_path(self.final_output_hal())}\n')
+                    fw.write(f'cp {self.render_run_path(self.task_primary_maf(self.root_task))} {self.render_run_path(self.final_output_maf())}\n')
+                    fw.write(f'cp {self.render_run_path(self.task_primary_fasta(self.root_task))} {self.render_run_path(self.final_output_fasta())}\n')
+
+                else:
+                    fw.write("# Root fixed task: the root alignment is produced by cactus as <Root>_aln1.hal.\n")
+                    fw.write("# Export HAL -> MAF using the final export reference, then convert MAF -> FASTA.\n\n")
+
+                    fw.write(f'cp {self.render_run_path(self.task_primary_hal(self.root_task))} {self.render_run_path(self.root_alltaxa_hal())}\n')
+                    fw.write(self.root_alltaxa_hal2maf_cmd() + "\n")
+                    fw.write(self.root_alltaxa_fasta_cmd() + "\n\n")
+
+                    fw.write(f'mv {self.render_run_path(self.root_alltaxa_hal())} {self.render_run_path(self.final_output_hal())}\n')
+                    fw.write(f'mv {self.render_run_path(self.root_alltaxa_maf())} {self.render_run_path(self.final_output_maf())}\n')
+                    fw.write(f'mv {self.render_run_path(self.root_alltaxa_fasta())} {self.render_run_path(self.final_output_fasta())}\n')
+
+            fw.write(f'cp {self.render_run_path(self.root_task.output_fa)} {self.render_run_path(self.final_output_ancestor_fasta())}\n')
 
         script_path.chmod(0o755)
         return script_path
@@ -998,7 +1053,7 @@ class Planner:
         fw.write("# Final output summary\n")
         fw.write(f"# RUN_PATH = {self.outdir}\n")
         fw.write(
-            f"# Final HAL-to-MAF export reference: {self.final_reference}\n"
+            f"# Final export reference (if HAL-to-MAF export was required): {self.final_reference}\n"
         )
 
         if self.root_task is None:
@@ -1197,6 +1252,17 @@ class Planner:
                     fw.write(f"## After Command{cmd_no - 1} is done, run final alignment export:\n")
                 fw.write("bash ${RUN_PATH}/finalization.sh\n\n")
 
+            if (
+                not self.final_reference_was_user_provided
+                and not self.is_single_level_polytomy_workflow()
+            ):
+                fw.write(
+                    "## The final HAL-to-MAF export reference was automatically selected as the longest genome from the input genome path file.\n"
+                )
+                fw.write(
+                    "## If a different export reference is preferred, manually modify the --refGenome option in finalization.sh.\n\n"
+                )
+
             fw.write("## The planning step is done. The final root-level workspace is under:\n")
             if self.root_task is not None:
                 fw.write(f"## {self.render_run_path(self.root_task.folder)}\n")
@@ -1239,11 +1305,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument(
         "--final_reference",
-        required=True,
+        required=False,
+        default=None,
         help=(
             "Reference genome used only when exporting the final complete "
-            "consensus HAL to MAF. It does not affect tree rooting, guide-tree "
-            "generation, Cactus alignment, or per-task consensus extraction."
+            "consensus HAL to MAF. Required for hierarchical workflows with "
+            "multiple tasks. For a single-task workflow, the automatically "
+            "selected local reference is reused as the final export reference."
         ),
     )
     ap.add_argument(
@@ -1403,16 +1471,17 @@ def main() -> None:
         )
 
     leaf_taxa = set(leaf_names(root))
-    if args.final_reference not in leaf_taxa:
-        raise ValueError(
-            f"Final reference {args.final_reference!r} is not a leaf taxon "
-            "in the input tree."
-        )
+    if args.final_reference is not None:
+        if args.final_reference not in leaf_taxa:
+            raise ValueError(
+                f"Final reference {args.final_reference!r} is not a leaf taxon "
+                "in the input tree."
+            )
 
-    if args.final_reference not in taxon_paths:
-        raise ValueError(
-            f"Final reference {args.final_reference!r} is not present in --paths."
-        )
+        if args.final_reference not in taxon_paths:
+            raise ValueError(
+                f"Final reference {args.final_reference!r} is not present in --paths."
+            )
 
     generator = Path(args.generator).resolve()
     if not generator.is_file():
@@ -1471,12 +1540,14 @@ def main() -> None:
         root=root,
         final_reference=args.final_reference,
         taxon_paths=taxon_paths,
+        paths_file=args.paths,
         outdir=args.outdir,
         guide_params=guide_params,
         pipeline_params=pipeline_params,
     )
 
     planner.plan()
+    planner.resolve_final_reference_for_single_task()
     planner.write_all_task_files()
     planner.write_finalization_script()
     instruction = planner.write_instruction()
