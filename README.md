@@ -16,7 +16,7 @@ This repository supports three common use cases:
 
 ```bash
 git clone https://github.com/taoqxtaozi/Common_Col.git
-cd common_col
+cd Common_Col
 export ConsensusExtractionPATH=$(pwd)
 ```
 
