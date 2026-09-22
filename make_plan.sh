@@ -142,11 +142,10 @@ Examples:
 
   # No fixed reference:
   # local reference of each consensus task = longest participating genome
-  # final_reference is only used for final HAL -> MAF export
+  # final HAL -> MAF export reference = longest genome from --paths
   bash make_plan.sh \
     --tree-file input.tre \
     --noFixedRef 1 \
-    --final_reference H \
     --paths path.txt \
     --threads 60 \
     --common_workers 15 \
@@ -156,7 +155,6 @@ Examples:
   bash make_plan.sh \
     --tree-file input.tre \
     --noFixedRef 1 \
-    --final_reference H \
     --paths path.txt \
     --threads 60 \
     --common_workers 15 \
@@ -410,11 +408,9 @@ else
     exit 1
   fi
 
-  if [[ -z "$FINAL_REFERENCE" ]]; then
-    echo "Error: --final_reference is required when --noFixedRef 1." >&2
-    echo "       It is used only for the final complete HAL -> MAF export." >&2
-    exit 1
-  fi
+  # In --noFixedRef mode, the final export reference is automatically
+  # selected from the longest genome in the input --paths file.
+  # Users can manually change --refGenome in finalization.sh if desired.
 fi
 
 
@@ -544,10 +540,10 @@ CMD=(
 
 # Mode-specific planner arguments.
 if [[ "$NO_FIXED_REF" == "1" ]]; then
-  CMD+=(
-    --final_reference "$FINAL_REFERENCE"
-    --reference-selector "$REFERENCE_SELECTOR"
-  )
+  if [[ -n "$FINAL_REFERENCE" ]]; then
+    CMD+=( --final_reference "$FINAL_REFERENCE" )
+  fi
+  CMD+=( --reference-selector "$REFERENCE_SELECTOR" )
 else
   CMD+=(
     --reference "$GLOBAL_REFERENCE"
@@ -616,7 +612,7 @@ fi
 if [[ "$NO_FIXED_REF" == "1" ]]; then
   echo "Planning mode: no fixed global reference"
   echo "Planner: $PLANNER"
-  echo "Final HAL-to-MAF reference: $FINAL_REFERENCE"
+  echo "Final HAL-to-MAF reference: automatically selected by plan_noFixedRef.py from --paths"
 else
   echo "Planning mode: fixed global reference"
   echo "Planner: $PLANNER"
