@@ -24,7 +24,8 @@ Core conventions
        - RunPipelineUseThis.sh --reference
    and every consensus task uses --ifRefNonOutgroup 0.
 7. The root-level final HAL -> MAF export also requires a coordinate reference.
-   That export-only reference is supplied explicitly with --final_reference.
+   That export-only reference is automatically selected as the genome with the
+   greatest FASTA sequence length using select_longest_reference.py.
    It is used only for the final full-alignment export and does not affect
    planning, guide trees, Cactus alignments, or consensus construction.
 
@@ -412,7 +413,6 @@ class Planner:
     def __init__(
         self,
         root: Node,
-        final_reference: Optional[str],
         taxon_paths: Dict[str, str],
         paths_file: Path,
         outdir: Path,
@@ -420,13 +420,11 @@ class Planner:
         pipeline_params: PipelineParams,
     ):
         self.root = root
-        self.final_reference = final_reference
         self.taxon_paths = taxon_paths
         self.paths_file = paths_file.resolve()
         self.outdir = outdir.resolve()
         self.guide_params = guide_params
         self.pipeline_params = pipeline_params
-        self.final_reference_was_user_provided = final_reference is not None
         self.tasks_by_name: Dict[str, Task] = {}
         self.root_task: Optional[Task] = None
 
@@ -786,9 +784,6 @@ class Planner:
         This reference is only used for final export and does not affect guide
         trees or consensus construction.
         """
-        if self.final_reference is not None:
-            return
-
         selector = self.pipeline_params.reference_selector
         result = subprocess.run(
             [
@@ -891,8 +886,8 @@ class Planner:
 
     def all_leaf_taxa(self) -> List[str]:
         """
-        Return extant taxa with --final_reference first, followed by the
-        remaining taxa in deterministic lexical order.
+        Return extant taxa with the automatically selected export reference
+        first, followed by the remaining taxa in deterministic lexical order.
         """
         taxa = sorted(leaf_names(self.root))
         others = [taxon for taxon in taxa if taxon != self.final_reference]
@@ -1252,10 +1247,7 @@ class Planner:
                     fw.write(f"## After Command{cmd_no - 1} is done, run final alignment export:\n")
                 fw.write("bash ${RUN_PATH}/finalization.sh\n\n")
 
-            if (
-                not self.final_reference_was_user_provided
-                and not self.is_single_level_polytomy_workflow()
-            ):
+            if not self.is_single_level_polytomy_workflow():
                 fw.write(
                     "## The final HAL-to-MAF export reference was automatically selected as the longest genome from the input genome path file.\n"
                 )
@@ -1301,17 +1293,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Input rooted Newick tree string. The input rooting is preserved; "
             "the planner does not reroot to any reference."
-        ),
-    )
-    ap.add_argument(
-        "--final_reference",
-        required=False,
-        default=None,
-        help=(
-            "Reference genome used only when exporting the final complete "
-            "consensus HAL to MAF. Required for hierarchical workflows with "
-            "multiple tasks. For a single-task workflow, the automatically "
-            "selected local reference is reused as the final export reference."
         ),
     )
     ap.add_argument(
@@ -1470,19 +1451,6 @@ def main() -> None:
             + ", ".join(repr(x) for x in missing_taxa)
         )
 
-    leaf_taxa = set(leaf_names(root))
-    if args.final_reference is not None:
-        if args.final_reference not in leaf_taxa:
-            raise ValueError(
-                f"Final reference {args.final_reference!r} is not a leaf taxon "
-                "in the input tree."
-            )
-
-        if args.final_reference not in taxon_paths:
-            raise ValueError(
-                f"Final reference {args.final_reference!r} is not present in --paths."
-            )
-
     generator = Path(args.generator).resolve()
     if not generator.is_file():
         raise FileNotFoundError(
@@ -1538,7 +1506,6 @@ def main() -> None:
 
     planner = Planner(
         root=root,
-        final_reference=args.final_reference,
         taxon_paths=taxon_paths,
         paths_file=args.paths,
         outdir=args.outdir,
