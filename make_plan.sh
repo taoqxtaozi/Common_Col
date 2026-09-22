@@ -26,7 +26,6 @@ Usage:
      bash make_plan.sh \
        --tree '<rooted Newick tree>' \
        --noFixedRef 1 \
-       --final_reference H \
        --paths path.txt \
        --threads 60 \
        --common_workers 15 \
@@ -35,7 +34,6 @@ Usage:
      bash make_plan.sh \
        --tree-file input.tre \
        --noFixedRef 1 \
-       --final_reference H \
        --paths path.txt \
        --threads 60 \
        --common_workers 15 \
@@ -67,14 +65,11 @@ Reference mode:
       Cactus alignment, or per-polytomy consensus extraction.
       Each consensus task selects the longest directly participating genome
       as its local reference.
-      --final_reference is required only for the final complete HAL -> MAF export.
 
 Reference arguments:
   --reference         Global reference used when --noFixedRef 0.
                       Alias: --global_reference
   --global_reference  Alias of --reference.
-  --final_reference   Final HAL -> MAF export reference used only when
-                      --noFixedRef 1.
 
 Tree requirement:
   The input tree must be rooted.
@@ -174,7 +169,6 @@ TREE_FILE=""
 
 NO_FIXED_REF=0
 GLOBAL_REFERENCE=""
-FINAL_REFERENCE=""
 
 PATHS_FILE=""
 OUTDIR="."
@@ -224,11 +218,6 @@ while [[ $# -gt 0 ]]; do
 
     --reference|--global_reference)
       GLOBAL_REFERENCE="${2:-}"
-      shift 2
-      ;;
-
-    --final_reference)
-      FINAL_REFERENCE="${2:-}"
       shift 2
       ;;
 
@@ -396,11 +385,6 @@ if [[ "$NO_FIXED_REF" == "0" ]]; then
     exit 1
   fi
 
-  if [[ -n "$FINAL_REFERENCE" ]]; then
-    echo "Error: --final_reference is only used when --noFixedRef 1." >&2
-    echo "       In the default fixed-reference mode, use --reference instead." >&2
-    exit 1
-  fi
 else
   if [[ -n "$GLOBAL_REFERENCE" ]]; then
     echo "Error: --reference/--global_reference must not be used when --noFixedRef 1." >&2
@@ -540,9 +524,6 @@ CMD=(
 
 # Mode-specific planner arguments.
 if [[ "$NO_FIXED_REF" == "1" ]]; then
-  if [[ -n "$FINAL_REFERENCE" ]]; then
-    CMD+=( --final_reference "$FINAL_REFERENCE" )
-  fi
   CMD+=( --reference-selector "$REFERENCE_SELECTOR" )
 else
   CMD+=(
