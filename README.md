@@ -15,7 +15,7 @@ This repository supports three common use cases:
 ### 1.1 Clone this repository
 
 ```bash
-git clone https://github.com/taoqxtaozi/common_col.git
+git clone https://github.com/taoqxtaozi/Common_Col.git
 cd common_col
 export ConsensusExtractionPATH=$(pwd)
 ```
