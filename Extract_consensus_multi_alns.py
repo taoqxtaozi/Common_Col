@@ -58,11 +58,20 @@ def parse_args():
 
 
 def separate(start, gap, end, list0, num):
+    # When only one segment is requested, return the whole interval directly.
+    # This also avoids referring to an undefined loop variable `i`.
+    if num == 0:
+        real_interval = IntervalSet()
+        real_interval.add(Interval(start, end, upper_closed=False))
+        return [real_interval], [list0]
+
     lsts = [[] for i in range(num)]
     real_intervals = [IntervalSet() for i in range(num)]
 
+    last_boundary = start
     for i, lst, real_interval in zip(range(start + gap, end, gap), lsts, real_intervals):
         real_interval.add(Interval(i - gap, i, upper_closed=False))
+        last_boundary = i
         for aln in list0[:]:
             inter = Interval(
                 aln[0].annotations["start"],
@@ -79,7 +88,7 @@ def separate(start, gap, end, list0, num):
 
     lsts.append(list0)
     real_intervals.append(IntervalSet())
-    real_intervals[-1].add(Interval(i, end, upper_closed=False))
+    real_intervals[-1].add(Interval(last_boundary, end, upper_closed=False))
 
     del list0
     gc.collect()
@@ -260,7 +269,15 @@ def main():
     common_workers = args.common_workers
 
     lst_files = [list(AlignIO.parse(f, "maf")) for f in input_files]
-    global_gap = round((global_end - global_start) / (global_num + 1))
+
+    interval_length = global_end - global_start
+
+    # Do not create more segments than there are reference positions.
+    # This guarantees a positive step for range() even for very short intervals.
+    requested_segments = global_num + 1
+    actual_segments = min(requested_segments, interval_length)
+    global_num = actual_segments - 1
+    global_gap = max(1, round(interval_length / actual_segments))
 
     separate_workers = max(1, min(separate_workers, len(lst_files)))
     pool0 = Pool(processes=separate_workers)
