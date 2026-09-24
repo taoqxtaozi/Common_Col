@@ -6,12 +6,16 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.AlignIO import MultipleSeqAlignment
 from Bio.AlignIO.MafIO import MafWriter
+from contextlib import nullcontext
+import os
 import sys
 
 # Usage:
 #   python add_ance2mafwithN.py input.maf output.maf AncName
 #   python add_ance2mafwithN.py input.maf output.maf AncName SeqName
 #   python add_ance2mafwithN.py input.maf output.maf AncName SeqName RefGenome.fa
+#   python add_ance2mafwithN.py input.maf output.maf AncName SeqName IngroupAncestor
+#   python add_ance2mafwithN.py input.maf output.maf AncName SeqName IngroupAncestor --inference-bed multirow.bed
 #
 # Examples:
 #   python add_ance2mafwithN.py consensus.maf consensus_A1.maf A1
@@ -24,13 +28,21 @@ import sys
 #       -> ancestor src name: A1.chr1
 #       -> ancestor srcSize is the length of chr1 in ref.fa
 #       -> regions not covered by consensus blocks are filled with chr1 reference sequence
+#
+#   python add_ance2mafwithN.py input.maf output.maf Anc0 chr1 Anc_Input
+#       -> blocks containing only Anc_Input.chr1 copy that sequence into Anc0.chr1
+#       -> blocks also containing other rows initialize Anc0.chr1 with N
+#       -> the ingroup ancestor must cover the chromosome without coordinate gaps
+#       -> optional BED limits ancestorsML to blocks with other rows
 
-if len(sys.argv) not in (4, 5, 6):
+if len(sys.argv) not in (4, 5, 6, 8) or (len(sys.argv) == 8 and sys.argv[6] != "--inference-bed"):
     sys.stderr.write(
         "Usage:\n"
         "  python add_ance2mafwithN.py input.maf output.maf AncName\n"
         "  python add_ance2mafwithN.py input.maf output.maf AncName SeqName\n"
         "  python add_ance2mafwithN.py input.maf output.maf AncName SeqName RefGenome.fa\n"
+        "  python add_ance2mafwithN.py input.maf output.maf AncName SeqName IngroupAncestor\n"
+        "  python add_ance2mafwithN.py input.maf output.maf AncName SeqName IngroupAncestor --inference-bed multirow.bed\n"
     )
     sys.exit(1)
 
@@ -43,14 +55,31 @@ if len(sys.argv) >= 5:
 else:
     seq_name = "node"
 
-if len(sys.argv) == 6:
-    ref_fasta = sys.argv[5]
-    fill_missing_with_ref = True
-else:
-    ref_fasta = None
-    fill_missing_with_ref = False
+ref_fasta = None
+ingroup_ancestor = None
+inference_bed = sys.argv[7] if len(sys.argv) == 8 else None
+if len(sys.argv) >= 6:
+    last_arg = sys.argv[5]
+    # The existing five-argument call passes a FASTA path.  A bare ancestor
+    # name selects the new mode; recognize existing extensionless FASTA paths.
+    if (os.path.isfile(last_arg) or os.path.sep in last_arg or
+            last_arg.lower().endswith((".fa", ".fasta", ".fna"))):
+        ref_fasta = last_arg
+    else:
+        ingroup_ancestor = last_arg
+
+fill_missing_with_ref = ref_fasta is not None
 
 ancestor_src = f"{ance}.{seq_name}"
+ingroup_src = f"{ingroup_ancestor}.{seq_name}" if ingroup_ancestor else None
+
+if inference_bed is not None and ingroup_src is None:
+    sys.stderr.write("ERROR: --inference-bed requires an ingroup ancestor name\n")
+    sys.exit(1)
+
+if ingroup_src == ancestor_src:
+    sys.stderr.write("ERROR: the new ancestor and ingroup ancestor must have different names\n")
+    sys.exit(1)
 
 
 def get_maf_seq_name(src):
@@ -129,6 +158,27 @@ def write_ancestor_only_block(writer, seq, start, src_size):
     writer.write_alignment(MultipleSeqAlignment([new_record]))
 
 
+def get_ingroup_record(block):
+    records = [record for record in block if record.id == ingroup_src]
+    if len(records) != 1:
+        sys.stderr.write(
+            f"ERROR: expected exactly one '{ingroup_src}' row per non-empty "
+            f"block in {f1maf}; found {len(records)}\n"
+        )
+        sys.exit(1)
+    if any(record.id == ancestor_src for record in block):
+        sys.stderr.write(f"ERROR: '{ancestor_src}' already exists in {f1maf}\n")
+        sys.exit(1)
+    return records[0]
+
+
+def get_new_ancestor_sequence(block, seq_length):
+    if ingroup_src is not None and len(block) == 1:
+        sequence = str(block[0].seq)
+        return sequence, len(sequence) - sequence.count("-")
+    return "N" * seq_length, seq_length
+
+
 ref_seq = None
 if fill_missing_with_ref:
     ref_seq = read_reference_sequence(ref_fasta, seq_name)
@@ -139,6 +189,8 @@ else:
 start = 0
 non_empty_blocks = 0
 empty_blocks = 0
+ingroup_end = 0
+ingroup_src_size = None
 
 # First pass: calculate total ancestor srcSize.
 # Skip empty MAF blocks.
@@ -151,6 +203,26 @@ for block in AlignIO.parse(f1maf, "maf"):
     if seq_length == 0:
         empty_blocks += 1
         continue
+
+    if ingroup_src is not None:
+        ingroup_record = get_ingroup_record(block)
+        annotations = ingroup_record.annotations
+        ingroup_start = int(annotations["start"])
+        ingroup_size = int(annotations["size"])
+        record_src_size = int(annotations["srcSize"])
+        if ingroup_src_size is None:
+            ingroup_src_size = record_src_size
+        actual_size = len(ingroup_record.seq) - str(ingroup_record.seq).count("-")
+        if (annotations["strand"] != 1 or ingroup_start != ingroup_end or
+                ingroup_size != actual_size or record_src_size != ingroup_src_size):
+            sys.stderr.write(
+                f"ERROR: '{ingroup_src}' does not continuously cover {seq_name} "
+                f"in {f1maf}: expected_start={ingroup_end}, "
+                f"row_start={ingroup_start}, annotation_size={ingroup_size}, "
+                f"non_gap_size={actual_size}\n"
+            )
+            sys.exit(1)
+        ingroup_end += ingroup_size
 
     if fill_missing_with_ref:
         ref_record = find_reference_record(block, seq_name)
@@ -175,13 +247,21 @@ for block in AlignIO.parse(f1maf, "maf"):
 
         start = ref_end
     else:
-        srcSize += seq_length
-        start += seq_length
+        _, ancestor_size = get_new_ancestor_sequence(block, seq_length)
+        srcSize += ancestor_size
+        start += ancestor_size
 
     non_empty_blocks += 1
 
 if non_empty_blocks == 0:
     sys.stderr.write(f"ERROR: no non-empty alignment blocks found in {f1maf}\n")
+    sys.exit(1)
+
+if ingroup_src is not None and ingroup_end != ingroup_src_size:
+    sys.stderr.write(
+        f"ERROR: '{ingroup_src}' ends at {ingroup_end}, but its srcSize is "
+        f"{ingroup_src_size}; ingroup blocks do not cover the whole chromosome\n"
+    )
     sys.exit(1)
 
 if empty_blocks > 0:
@@ -190,7 +270,9 @@ if empty_blocks > 0:
     )
 
 # Second pass: add ancestor row to each non-empty block.
-with open(f1maf, "r") as f, open(fnewmaf, "w") as out_f:
+with open(f1maf, "r") as f, open(fnewmaf, "w") as out_f, (
+    open(inference_bed, "w") if inference_bed else nullcontext()
+) as bed_out:
     writer = MafWriter(out_f)
     writer.write_header()
 
@@ -279,6 +361,8 @@ with open(f1maf, "r") as f, open(fnewmaf, "w") as out_f:
 
     else:
         start = 0
+        inference_start = None
+        inference_end = None
 
         for block in AlignIO.parse(f, "maf"):
             if len(block) == 0:
@@ -288,20 +372,25 @@ with open(f1maf, "r") as f, open(fnewmaf, "w") as out_f:
             if seq_length == 0:
                 continue
 
-            new_block = []
-
-            new_record = SeqRecord(
-                Seq("N" * seq_length),
-                id=ancestor_src,
-                description="",
+            ancestor_sequence, ancestor_size = get_new_ancestor_sequence(
+                block, seq_length
             )
-
-            new_record.annotations = {
-                "start": start,
-                "size": seq_length,
-                "strand": 1,
-                "srcSize": srcSize,
-            }
+            if bed_out is not None:
+                if len(block) > 1:
+                    if inference_start is None:
+                        inference_start = start
+                    inference_end = start + ancestor_size
+                elif inference_start is not None:
+                    bed_out.write(f"{seq_name}\t{inference_start}\t{inference_end}\n")
+                    inference_start = None
+                    inference_end = None
+            new_block = []
+            new_record = make_ancestor_record(
+                seq=ancestor_sequence,
+                start=start,
+                size=ancestor_size,
+                src_size=srcSize,
+            )
 
             new_block.append(new_record)
 
@@ -309,7 +398,10 @@ with open(f1maf, "r") as f, open(fnewmaf, "w") as out_f:
                 new_block.append(record)
 
             writer.write_alignment(MultipleSeqAlignment(new_block))
-            start += seq_length
+            start += ancestor_size
+
+        if bed_out is not None and inference_start is not None:
+            bed_out.write(f"{seq_name}\t{inference_start}\t{inference_end}\n")
 
         if start != srcSize:
             sys.stderr.write(
