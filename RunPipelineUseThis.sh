@@ -80,8 +80,8 @@ Optional arguments:
                               first, then infer the top ancestor:
                               (reference,(non-reference taxa)Anc_name_ofIngroup)Anc_name.
   --ifDeleteImmdiFiles    Whether to keep intermediate files and directories.
-                          0 = delete all intermediate files and directories. Default: 0.
-                          1 = keep all intermediate files and directories.
+                          0 = delete this run's workspace and newly created intermediate files. Default: 0.
+                          1 = retain this run's intermediate files and workspace.
   --Anc_name_ofIngroup    Ingroup ancestor name used only when --ifRefNonOutgroup 1,
                           i.e. when the reference is treated as an outgroup.
                           It is the ancestor of non-reference taxa and must differ
@@ -106,10 +106,13 @@ Notes:
       python add_ance2mafwithN.py input.maf output.maf AncName SeqName RefGenome.fa
     so that per-chromosome ancestor rows are named AncName.SeqName and
     missing intervals are filled from the corresponding reference sequence.
-  * All intermediate files and directories will be created under a tmp_XXXXXX directory
-    inside the directory containing --pre.
-  * By default, the temporary workspace is deleted after completion.
-    Use --ifDeleteImmdiFiles 1 to retain all intermediate files and directories.
+    In the outgroup branch, its ingroup-ancestor mode also records the
+    multi-row intervals for the second inference round; single-row intervals
+    retain the ingroup ancestor sequence.
+  * Chromosome-level intermediate files are under tmp_XXXXXX beside --pre.
+    Merged ancestor MAFs and model files are written beside --pre.
+  * By default, the workspace and intermediate files newly created by this run
+    are deleted after completion. Use --ifDeleteImmdiFiles 1 to retain them.
   * threads must be >= common_workers.
   * threads is the total CPU budget on the machine.
   * common_workers is the CPU usage of one consensus-extraction program.
@@ -122,6 +125,16 @@ USAGEEOF
 
 is_positive_integer() {
     [[ "$1" =~ ^[1-9][0-9]*$ ]]
+}
+
+record_new_intermediates() {
+    local path
+    for path in "$@"; do
+        # Files already present before this run must never enter the cleanup list.
+        if [[ ! -e "$path" && ! -L "$path" ]]; then
+            created_intermediate_files+=( "$path" )
+        fi
+    done
 }
 
 run_parallel_commands() {
@@ -181,6 +194,7 @@ run_parallel_commands() {
 raw_inputs=()
 inputs=()
 input_tags=()
+created_intermediate_files=()
 threads=""
 pre=""
 output_prefix_abs=""
@@ -1192,10 +1206,12 @@ run_per_chrom_direct_ancestor_branch() {
     done < <(printf '%s\n' "${chrom_maf_files[@]}" | sort -V)
 
     branch_task_model_input_maf_abs="${output_prefix_abs}_${branch_ancestor_name}.maf"
+    record_new_intermediates "$branch_task_model_input_maf_abs"
     merge_maf_files "$branch_task_model_input_maf_abs" "${chrom_added_maf_files[@]}"
 
     branch_task_model_use_abs="${output_prefix_abs}_${branch_ancestor_name}_$(basename "${model_file%.*}")_useThis.mod"
     branch_task_jc69_root_abs="${output_prefix_abs}_${branch_ancestor_name}_JC69modle"
+    record_new_intermediates "$branch_task_model_use_abs" "${branch_task_jc69_root_abs}.mod"
     run_task_level_phylofit_model \
         "$model_tree" \
         "$branch_task_model_input_maf_abs" \
@@ -1304,6 +1320,7 @@ EOF
     local final_ancestor_checked_maf_abs="${output_prefix_abs}_${branch_ancestor_name}_new2.maf"
     local final_ancestor_fasta_abs="${output_dir}/${branch_ancestor_name}.fa"
 
+    record_new_intermediates "$final_ancestor_maf_abs" "$final_ancestor_checked_maf_abs"
     merge_maf_files "$final_ancestor_maf_abs" "${chrom_new_maf_files[@]}"
 
     merge_fasta_files "$final_ancestor_fasta_abs" "${chrom_fasta_files[@]}"
@@ -1312,7 +1329,12 @@ EOF
     cp "$final_ancestor_maf_abs" "$final_ancestor_checked_maf_abs"
     for tax in "${taxa_args[@]}" "$branch_ancestor_name"; do
         info_abs="$info_tmp_dir/${tax}.info.txt"
-        python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_ancestor_checked_maf_abs" "$tax"
+        if [[ "$tax" == "$branch_ancestor_name" ]]; then
+            python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_ancestor_checked_maf_abs" "$tax" \
+                --ifAnc 1 --genome "$final_ancestor_fasta_abs"
+        else
+            python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_ancestor_checked_maf_abs" "$tax"
+        fi
     done
 
     "$patched_maf2hal" \
@@ -1474,10 +1496,12 @@ run_per_chrom_ref_outgroup_branch() {
     done < <(printf '%s\n' "${chrom_maf_files[@]}" | sort -V)
 
     ingroup_task_noref_maf_abs="${output_prefix_abs}_${ingroup_ancestor_name}_noref.maf"
+    record_new_intermediates "$ingroup_task_noref_maf_abs"
     merge_maf_files "$ingroup_task_noref_maf_abs" "${ingroup_noref_maf_files[@]}"
 
     ingroup_task_model_use_abs="${output_prefix_abs}_${ingroup_ancestor_name}_$(basename "${model_file%.*}")_useThis.mod"
     ingroup_task_jc69_root_abs="${output_prefix_abs}_${ingroup_ancestor_name}_JC69modle"
+    record_new_intermediates "$ingroup_task_model_use_abs" "${ingroup_task_jc69_root_abs}.mod"
     run_task_level_phylofit_model \
         "$ingroup_model_tree" \
         "$ingroup_task_noref_maf_abs" \
@@ -1521,6 +1545,7 @@ run_per_chrom_ref_outgroup_branch() {
         ingroup_noref_new_maf_abs="${chrom_prefix_abs}_noref_new.maf"
         ref_plus_ingroup_maf_abs="${chrom_prefix_abs}_new_noIngroup.maf"
         top_added_maf_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}.maf"
+        top_inference_bed_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}_inference.bed"
 
         # Record expected outputs in the parent shell before launching jobs.
         ingroup_noref_new_maf_files+=( "$ingroup_noref_new_maf_abs" )
@@ -1603,7 +1628,9 @@ python "$script_dir/add_ance2mafwithN.py" \
     "$ref_plus_ingroup_maf_abs" \
     "$top_added_maf_abs" \
     "$top_ancestor_name" \
-    "$ref_seq_name"
+    "$ref_seq_name" \
+    "$ingroup_ancestor_name" \
+    --inference-bed "$top_inference_bed_abs"
 
 echo "  [ingroup ancestor job ${ingroup_job_idx}] Finished chromosome: ${chrom_name}"
 EOF
@@ -1624,10 +1651,12 @@ EOF
     echo "All ingroup-ancestor chromosome jobs finished."
 
     top_task_added_maf_abs="${output_prefix_abs}_${ingroup_ancestor_name}_new_noIngroup_${top_ancestor_name}.maf"
+    record_new_intermediates "$top_task_added_maf_abs"
     merge_maf_files "$top_task_added_maf_abs" "${top_added_maf_files[@]}"
 
     top_task_model_use_abs="${output_prefix_abs}_${ingroup_ancestor_name}_new_noIngroup_${top_ancestor_name}_$(basename "${model_file%.*}")_useThis.mod"
     top_task_jc69_root_abs="${output_prefix_abs}_${ingroup_ancestor_name}_new_noIngroup_${top_ancestor_name}_JC69modle"
+    record_new_intermediates "$top_task_model_use_abs" "${top_task_jc69_root_abs}.mod"
     run_task_level_phylofit_model \
         "$top_model_tree" \
         "$top_task_added_maf_abs" \
@@ -1663,6 +1692,7 @@ EOF
         top_hal_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}.hal"
         top_jc69_root_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}_JC69modle"
         top_tsv_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}_JC69modle.tsv"
+        top_inference_bed_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}_inference.bed"
         top_fasta_abs="${chrom_dir}/${top_ancestor_name}.${ref_seq_name}.fa"
         top_noingroup_new_maf_abs="${chrom_prefix_abs}_new_noIngroup_${top_ancestor_name}_new.maf"
 
@@ -1691,6 +1721,7 @@ fi
 
 "$patched_ancestorsML" \
     --printWrites \
+    --bed "$top_inference_bed_abs" \
     "$top_hal_abs" \
     "$top_ancestor_name" \
     "${top_task_jc69_root_abs}.mod" \
@@ -1741,6 +1772,9 @@ EOF
     local final_ingroup_fasta_abs="${output_dir}/${ingroup_ancestor_name}.fa"
     local final_top_fasta_abs="${output_dir}/${top_ancestor_name}.fa"
 
+    record_new_intermediates \
+        "$final_ingroup_maf_abs" "$final_ingroup_checked_maf_abs" "$final_ingroup_hal_abs" \
+        "$final_top_maf_abs" "$final_top_checked_maf_abs" "$final_top_hal_abs"
     merge_maf_files "$final_ingroup_maf_abs" "${ingroup_noref_new_maf_files[@]}"
 
     merge_fasta_files "$final_ingroup_fasta_abs" "${ingroup_fasta_files[@]}"
@@ -1749,7 +1783,12 @@ EOF
     cp "$final_ingroup_maf_abs" "$final_ingroup_checked_maf_abs"
     for tax in "${taxa_args[@]}" "$ingroup_ancestor_name"; do
         info_abs="$info_tmp_dir/${tax}.info.txt"
-        python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_ingroup_checked_maf_abs" "$tax"
+        if [[ "$tax" == "$ingroup_ancestor_name" ]]; then
+            python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_ingroup_checked_maf_abs" "$tax" \
+                --ifAnc 1 --genome "$final_ingroup_fasta_abs"
+        else
+            python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_ingroup_checked_maf_abs" "$tax"
+        fi
     done
 
     "$patched_maf2hal" \
@@ -1766,7 +1805,15 @@ EOF
     cp "$final_top_maf_abs" "$final_top_checked_maf_abs"
     for tax in "$reference" "$ingroup_ancestor_name" "$top_ancestor_name"; do
     	info_abs="$info_tmp_dir/${tax}.info.txt"
-    	python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_top_checked_maf_abs" "$tax"
+        if [[ "$tax" == "$ingroup_ancestor_name" ]]; then
+            python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_top_checked_maf_abs" "$tax" \
+                --ifAnc 1 --genome "$final_ingroup_fasta_abs"
+        elif [[ "$tax" == "$top_ancestor_name" ]]; then
+            python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_top_checked_maf_abs" "$tax" \
+                --ifAnc 1 --genome "$final_top_fasta_abs"
+        else
+            python "$script_dir/check_if_maf_contain_all_taxachrom.py" "$info_abs" "$final_top_checked_maf_abs" "$tax"
+        fi
     done
 
     "$patched_maf2hal" \
@@ -1800,7 +1847,7 @@ else
 fi
 
 ############################
-# 17. Delete or preserve intermediate temporary workspace
+# 17. Delete this run's intermediates or retain them
 ############################
 echo "Pipeline finished."
 echo "Final consensus MAF output: $output_maf_abs"
@@ -1824,14 +1871,15 @@ fi
 
 if [[ "$ifDeleteImmdiFiles" == "0" ]]; then
     rm -rf "$work_dir"
-    rm -f "${output_prefix_abs}"_*
+    if [[ ${created_intermediate_files[0]+x} ]]; then
+        for intermediate_file in "${created_intermediate_files[@]}"; do
+            if [[ -f "$intermediate_file" || -L "$intermediate_file" ]]; then
+                rm -f -- "$intermediate_file"
+            fi
+        done
+    fi
     echo "Temporary workspace deleted: $work_dir"
 else
     echo "Temporary workspace retained: $work_dir"
-
-    if [[ "$ifRefNonOutgroup" == "1" ]]; then
-        echo "Except for ${output_base}.maf ${output_base}.fasta ${output_base}.hal ${anc_name_of_ingroup}.fa ${anc_name}.fa, all other files and directories are intermediate files."
-    else
-        echo "Except for ${output_base}.maf ${output_base}.fasta ${output_base}.hal ${anc_name}.fa, all other files and directories are intermediate files."
-    fi
+    echo "Intermediate files in the output directory were retained."
 fi
